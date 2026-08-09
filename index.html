@@ -1,34 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A4 Sudan</title>
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f4f6f8;
-            text-align: center;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#033621" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="A4 Sudan" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/assets/images/a4_sudan_green_logo_1785943554845.jpg" />
+    <title>مكتبة A4 السودان - خدمات الطباعة والشيتات</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+      // Auto-recovery mechanism for stale service workers or broken cache
+      window.addEventListener('error', function(e) {
+        if (e.message && (e.message.includes('Unexpected token') || e.message.includes('Loading chunk') || e.message.includes('Importing a module script failed'))) {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+              for (let registration of registrations) {
+                registration.unregister();
+              }
+              if (!sessionStorage.getItem('sw_recovered')) {
+                sessionStorage.setItem('sw_recovered', 'true');
+                window.location.reload();
+              }
+            });
+          }
         }
-        .card {
-            background: white;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        h1 { color: #1b5e20; }
-        p { color: #555; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>مكتبة A4 Sudan</h1>
-        <p>تم ربط المشروع بنجاح مع Vercel و GitHub!</p>
-    </div>
-</body>
+      });
+
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js').then(function(reg) {
+            reg.update();
+          }).catch(function(err) {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
+

@@ -1,0 +1,32 @@
+{
+  "name": "مكتبة A4 السودان للطباعة والتجليد",
+  "short_name": "A4 Sudan",
+  "description": "التطبيق الرسمي لمكتبة A4 السودان لخدمات الطباعة، طباعة الشيتات والمستندات والتوصيل",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#033621",
+  "theme_color": "#033621",
+  "orientation": "portrait",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/pwa-192.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/images/a4_sudan_green_logo_1785943554845.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

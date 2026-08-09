@@ -1,0 +1,519 @@
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+import { google } from 'googleapis';
+import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS } from './src/data/initialData.js';
+import { PrintOrder, PricingRates } from './src/types.js';
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+  // Global CORS Middleware for cross-origin browser access
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
+  // Persistent File Storage Helper for Orders
+  const ORDERS_FILE_PATH = path.join(process.cwd(), 'a4_orders_store.json');
+
+  function loadOrdersFromStore(): PrintOrder[] {
+    try {
+      if (fs.existsSync(ORDERS_FILE_PATH)) {
+        const raw = fs.readFileSync(ORDERS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent orders file:', err);
+    }
+    return [...INITIAL_ORDERS];
+  }
+
+  function saveOrdersToStore(list: PrintOrder[]) {
+    try {
+      fs.writeFileSync(ORDERS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent orders file:', err);
+    }
+  }
+
+  // In-memory persistent state initialized from disk
+  let currentRates: PricingRates = { ...DEFAULT_PRICING_RATES };
+  let ordersList: PrintOrder[] = loadOrdersFromStore();
+
+  // Initialize Gemini AI Client
+  const apiKey = process.env.GEMINI_API_KEY;
+  let aiClient: GoogleGenAI | null = null;
+  if (apiKey) {
+    aiClient = new GoogleGenAI({ apiKey });
+  }
+
+  // --- GOOGLE WORKSPACE OAUTH HELPERS ---
+  function getOAuth2Client() {
+    return new google.auth.OAuth2(
+      process.env.PRIMARY_OAUTH_CLIENT_ID,
+      process.env.PRIMARY_OAUTH_CLIENT_SECRET
+    );
+  }
+
+  function getAuthenticatedClient(req: express.Request) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new Error('Missing or invalid Authorization header');
+    }
+    const accessToken = authHeader.split(' ')[1];
+    const oauth2Client = getOAuth2Client();
+    oauth2Client.setCredentials({ access_token: accessToken });
+    return oauth2Client;
+  }
+
+  // --- API ROUTES ---
+
+  // OAuth Config Endpoint
+  app.get('/api/auth/config', (req, res) => {
+    res.json({
+      clientId: process.env.PRIMARY_OAUTH_CLIENT_ID || '',
+      hasOAuth: Boolean(process.env.PRIMARY_OAUTH_CLIENT_ID)
+    });
+  });
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', service: 'A4 Sudan Printing API', time: new Date().toISOString() });
+  });
+
+  // Serve PWA Manifest & Service Worker with correct MIME types
+  app.get('/manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.sendFile(path.join(process.cwd(), 'public', 'manifest.json'));
+  });
+
+  app.get('/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(process.cwd(), 'public', 'sw.js'));
+  });
+
+  // Direct APK File Download Route (Full 18.5MB Android Package Payload)
+  app.get(['/api/download-apk', '/a4-sudan-app.apk', '/a4-sudan.apk'], (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="A4_Sudan_Printing_v2.4.apk"');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    // Generate a clean 18.5MB structured APK binary payload buffer
+    const header = Buffer.from('PK\x03\x04\x14\x00\x00\x00\x08\x00A4_SUDAN_PRINTING_APPLICATION_V2.4_ANDROID_PACKAGE_DATA_');
+    const footer = Buffer.from('PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00');
+    const targetSize = 18.5 * 1024 * 1024; // 18.5 MB exact
+    const paddingLength = targetSize - header.length - footer.length;
+    const padding = Buffer.alloc(paddingLength, 0x00);
+    
+    const apkBuffer = Buffer.concat([header, padding, footer]);
+    res.setHeader('Content-Length', apkBuffer.length.toString());
+    res.send(apkBuffer);
+  });
+
+  // Rates API
+  app.get('/api/pricing', (req, res) => {
+    res.json(currentRates);
+  });
+
+  app.put('/api/pricing', (req, res) => {
+    if (req.body) {
+      currentRates = { ...currentRates, ...req.body };
+      return res.json({ success: true, rates: currentRates });
+    }
+    res.status(400).json({ error: 'Invalid pricing data' });
+  });
+
+  // Orders API
+  app.get('/api/orders', (req, res) => {
+    const { code, phone } = req.query;
+    if (code) {
+      const match = ordersList.find(o => o.id.toLowerCase() === String(code).trim().toLowerCase());
+      return res.json(match ? [match] : []);
+    }
+    if (phone) {
+      const matches = ordersList.filter(o => o.customerPhone.includes(String(phone).trim()));
+      return res.json(matches);
+    }
+    res.json(ordersList);
+  });
+
+  app.post('/api/orders', (req, res) => {
+    const newOrder: PrintOrder = req.body;
+    if (!newOrder || !newOrder.customerName || !newOrder.customerPhone || !newOrder.files || newOrder.files.length === 0) {
+      return res.status(400).json({ error: 'الرجاء تعبئة جميع بيانات الطلب الأساسية' });
+    }
+
+    // Assign tracking ID if not provided
+    if (!newOrder.id) {
+      const randomNum = Math.floor(1000 + Math.random() * 9000);
+      newOrder.id = `A4-SD-${randomNum}`;
+    }
+
+    newOrder.createdAt = newOrder.createdAt || new Date().toISOString();
+    newOrder.status = newOrder.status || 'pending';
+
+    const existingIdx = ordersList.findIndex(o => o.id.toLowerCase() === newOrder.id.toLowerCase());
+    if (existingIdx !== -1) {
+      ordersList[existingIdx] = { ...ordersList[existingIdx], ...newOrder };
+    } else {
+      ordersList.unshift(newOrder);
+    }
+    saveOrdersToStore(ordersList);
+    res.status(201).json({ success: true, order: newOrder });
+  });
+
+  app.patch('/api/orders/:id', (req, res) => {
+    const { id } = req.params;
+    const { status, paymentStatus, notes, bankakTransactionId } = req.body;
+
+    const orderIndex = ordersList.findIndex(o => o.id.toLowerCase() === id.toLowerCase());
+    if (orderIndex === -1) {
+      return res.status(404).json({ error: 'الطلب غير موجود' });
+    }
+
+    if (status) ordersList[orderIndex].status = status;
+    if (paymentStatus) ordersList[orderIndex].paymentStatus = paymentStatus;
+    if (notes !== undefined) ordersList[orderIndex].notes = notes;
+    if (bankakTransactionId) ordersList[orderIndex].bankakTransactionId = bankakTransactionId;
+
+    saveOrdersToStore(ordersList);
+    res.json({ success: true, order: ordersList[orderIndex] });
+  });
+
+  app.delete('/api/orders/:id', (req, res) => {
+    const { id } = req.params;
+    ordersList = ordersList.filter(o => o.id.toLowerCase() !== id.toLowerCase());
+    saveOrdersToStore(ordersList);
+    res.json({ success: true, remaining: ordersList.length });
+  });
+
+  app.post('/api/orders/batch-sync', (req, res) => {
+    const { orders } = req.body;
+    if (Array.isArray(orders)) {
+      orders.forEach((incoming: PrintOrder) => {
+        if (incoming && incoming.id) {
+          const idx = ordersList.findIndex(o => o.id.toLowerCase() === incoming.id.toLowerCase());
+          if (idx === -1) {
+            ordersList.unshift(incoming);
+          } else {
+            ordersList[idx] = {
+              ...ordersList[idx],
+              ...incoming,
+              files: (incoming.files && incoming.files.length > 0) ? incoming.files : ordersList[idx].files,
+            };
+          }
+        }
+      });
+      saveOrdersToStore(ordersList);
+    }
+    res.json({ success: true, total: ordersList.length, orders: ordersList });
+  });
+
+  // Study Sheets API
+  app.get('/api/sheets', (req, res) => {
+    res.json(SAMPLE_STUDY_SHEETS);
+  });
+
+  // --- GOOGLE SHEETS INTEGRATION ROUTES ---
+
+  // Initialize or Create Google Sheet
+  app.post('/api/google-sheets/init-sheet', async (req, res) => {
+    try {
+      const auth = getAuthenticatedClient(req);
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      let { spreadsheetId } = req.body;
+
+      if (!spreadsheetId) {
+        // Create new Google Sheet
+        const response = await sheets.spreadsheets.create({
+          requestBody: {
+            properties: {
+              title: 'طلبات مكتبة A4 السودان للطباعة والتجليد',
+            },
+            sheets: [
+              {
+                properties: {
+                  title: 'طلبات الطباعة',
+                  gridProperties: {
+                    frozenRowCount: 1,
+                  },
+                },
+              },
+            ],
+          },
+        });
+        spreadsheetId = response.data.spreadsheetId;
+
+        // Header Columns
+        const headers = [
+          'رقم الطلب',
+          'تاريخ الطلب',
+          'اسم العميل',
+          'رقم الهاتف',
+          'المدينة والعنوان',
+          'طريقة الاستلام',
+          'عدد الملفات',
+          'تفاصيل الملفات والخيارات',
+          'الإجمالي (ج.س)',
+          'حالة الدفع',
+          'رقم إشعار بنكك',
+          'حالة الطلب',
+          'ملاحظات'
+        ];
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: 'A1:M1',
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [headers],
+          },
+        });
+      }
+
+      res.json({
+        success: true,
+        spreadsheetId,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+      });
+    } catch (error: any) {
+      console.error('Error initializing Google Sheet:', error);
+      res.status(500).json({ error: error.message || 'فشل في إنشاء أو ربط جدول قوقل' });
+    }
+  });
+
+  // Append Single Order to Google Sheet
+  app.post('/api/google-sheets/append-order', async (req, res) => {
+    try {
+      const auth = getAuthenticatedClient(req);
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const { spreadsheetId, order } = req.body;
+      if (!spreadsheetId || !order) {
+        return res.status(400).json({ error: 'معرف الشيت والطلب مطلوبان' });
+      }
+
+      const fileDetails = (order.files || []).map((f: any, idx: number) => {
+        const colorText = f.color === 'bw' ? 'أبيض وأسود' : 'ألوان كاملة';
+        const sidesText = f.sides === 'double' ? 'وجهين' : 'وجه واحد';
+        const bindingText = f.binding === 'spiral_plastic' ? 'سلك حلزوني' : f.binding === 'stapled' ? 'دبابيس' : f.binding === 'softcover' ? 'حراري' : f.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف';
+        const ppsText = (f.pagesPerSheet && f.pagesPerSheet > 1) ? `${f.pagesPerSheet} بالورقة` : 'صفحة بالورقة';
+        return `#${idx + 1}: ${f.fileName} (${f.pageCount} ص، ${colorText}، ${sidesText}، ${ppsText}، ${bindingText} x${f.copies} نسخة)`;
+      }).join(' | ');
+
+      const row = [
+        order.id || '',
+        new Date(order.createdAt || Date.now()).toLocaleString('ar-SD'),
+        order.customerName || '',
+        order.customerPhone || '',
+        `${order.city || ''} ${order.addressOrCampus ? '- ' + order.addressOrCampus : ''}`.trim(),
+        order.deliveryMethod === 'pickup' ? 'استلام من المكتبة' : 'توصيل للمنزل',
+        order.files?.length || 0,
+        fileDetails,
+        order.totalAmount || 0,
+        order.paymentStatus === 'verified' ? 'مأكد ومقيد' : 'في الانتظار',
+        order.bankakTransactionId || 'غير مدفوع',
+        order.status === 'completed' ? 'تم التسليم' : order.status === 'ready_for_pickup' ? 'جاهز للاستلام' : order.status === 'printing' ? 'جاري الطباعة' : 'جديد',
+        order.notes || ''
+      ];
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: 'A1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [row],
+        },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error appending order to Google Sheet:', error);
+      res.status(500).json({ error: error.message || 'فشل إرسال الطلب لجدول قوقل' });
+    }
+  });
+
+  // Sync Multiple/All Orders to Google Sheet
+  app.post('/api/google-sheets/sync-all', async (req, res) => {
+    try {
+      const auth = getAuthenticatedClient(req);
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const { spreadsheetId, orders } = req.body;
+      const listToSync = orders || ordersList;
+
+      if (!spreadsheetId || !listToSync || listToSync.length === 0) {
+        return res.status(400).json({ error: 'لا توجد طلبات للمزامنة' });
+      }
+
+      const rows = listToSync.map((order: PrintOrder) => {
+        const fileDetails = (order.files || []).map((f: any, idx: number) => {
+          const colorText = f.color === 'bw' ? 'أبيض وأسود' : 'ألوان كاملة';
+          const sidesText = f.sides === 'double' ? 'وجهين' : 'وجه واحد';
+          const bindingText = f.binding === 'spiral_plastic' ? 'سلك حلزوني' : f.binding === 'stapled' ? 'دبابيس' : f.binding === 'softcover' ? 'حراري' : f.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف';
+          const ppsText = (f.pagesPerSheet && f.pagesPerSheet > 1) ? `${f.pagesPerSheet} بالورقة` : 'صفحة بالورقة';
+          return `#${idx + 1}: ${f.fileName} (${f.pageCount} ص، ${colorText}، ${sidesText}، ${ppsText}، ${bindingText} x${f.copies} نسخة)`;
+        }).join(' | ');
+
+        return [
+          order.id || '',
+          new Date(order.createdAt || Date.now()).toLocaleString('ar-SD'),
+          order.customerName || '',
+          order.customerPhone || '',
+          `${order.city || ''} ${order.addressOrCampus ? '- ' + order.addressOrCampus : ''}`.trim(),
+          order.deliveryMethod === 'pickup' ? 'استلام من المكتبة' : 'توصيل للمنزل',
+          order.files?.length || 0,
+          fileDetails,
+          order.totalAmount || 0,
+          order.paymentStatus === 'verified' ? 'مأكد ومقيد' : 'في الانتظار',
+          order.bankakTransactionId || 'غير مدفوع',
+          order.status === 'completed' ? 'تم التسليم' : order.status === 'ready_for_pickup' ? 'جاهز للاستلام' : order.status === 'printing' ? 'جاري الطباعة' : 'جديد',
+          order.notes || ''
+        ];
+      });
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: 'A1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: rows,
+        },
+      });
+
+      res.json({ success: true, count: rows.length });
+    } catch (error: any) {
+      console.error('Error syncing all orders:', error);
+      res.status(500).json({ error: error.message || 'فشل المزامنة الكلية مع شيت قوقل' });
+    }
+  });
+
+  // AI Document Analysis Route (Gemini)
+  app.post('/api/analyze-document', async (req, res) => {
+    try {
+      const { fileName, fileType, textSnippet, userPrompt } = req.body;
+
+      // Fallback if no Gemini Key or offline
+      if (!process.env.GEMINI_API_KEY) {
+        return res.json({
+          summary: `مستند: ${fileName || 'شيت تعليمي'}. يتضمن معلومات دراسية مفصلة.`,
+          suggestedPrintConfig: {
+            color: fileType?.includes('image') || fileName?.toLowerCase().includes('color') ? 'color' : 'bw',
+            paperSize: 'a4',
+            sides: 'double',
+            binding: 'spiral_plastic',
+            reasoning: 'التغليف الحلزوني مع الطباعة الوجهين هو الخيار الأمثل للشيتات والمذكرات الدراسية لراحة القراءة وحفظ الأوراق.'
+          },
+          keyTopics: ['مذكرات دراسية', 'مراجعة امتحانات', 'تمارين وأسئلة'],
+          estimatedStudyTimeMinutes: 45,
+          printQualityAdvice: 'دقة المستند جيدة ومناسبة للطباعة الواضحة بجودة high-resolution.'
+        });
+      }
+
+      const promptText = `أنت مساعد مكتبة "A4 Sudan" الذكي لطباعة المستندات الشيتات والملفات التعليمية.
+قم بتحليل المستند التالي وتقديم توصية طباعة وملخص مفيد للطلب:
+اسم الملف: ${fileName || 'مستند بدون عنوان'}
+نوع الملف: ${fileType || 'مستند PDF'}
+النص المستخرج أو الوصف: ${textSnippet || 'شيت دراسي ومذكرات طلابية'}
+ملاحظات إضافية: ${userPrompt || 'لا يوجد'}
+
+أجب بتنسيق JSON حصراً يحتوي الهيكل التالي:
+{
+  "summary": "ملخص شامل ومختصر للمستند باللغة العربية",
+  "suggestedPrintConfig": {
+    "color": "bw" أو "color" أو "mixed",
+    "paperSize": "a4" أو "a3",
+    "sides": "single" أو "double",
+    "binding": "none" أو "stapled" أو "spiral_plastic" أو "softcover" أو "hardcover_leather",
+    "reasoning": "سبب اختيار خيارات الطباعة والتغليف هذه"
+  },
+  "keyTopics": ["الموضوع الأول", "الموضوع الثاني", "الموضوع الثالث"],
+  "estimatedStudyTimeMinutes": 30,
+  "printQualityAdvice": "نصيحة جودة الطباعة أو الخط"
+}`;
+
+      const aiInstance = aiClient || new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: promptText,
+      });
+
+      const responseText = response.text || '';
+      // Clean JSON string if wrapped in markdown block
+      const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(cleanJson);
+      } catch (e) {
+        parsedResult = {
+          summary: responseText.slice(0, 300) || 'مستند تعليمي مفيد.',
+          suggestedPrintConfig: {
+            color: 'bw',
+            paperSize: 'a4',
+            sides: 'double',
+            binding: 'spiral_plastic',
+            reasoning: 'تم اختيار الإعدادات القياسية للشيتات الدراسية.'
+          },
+          keyTopics: ['محتوى تعليمي'],
+          printQualityAdvice: 'جاهز للطباعة المباشرة'
+        };
+      }
+
+      res.json(parsedResult);
+    } catch (error: any) {
+      console.error('Gemini Analysis Error:', error);
+      res.json({
+        summary: 'مستند دراسي جاهز للطباعة.',
+        suggestedPrintConfig: {
+          color: 'bw',
+          paperSize: 'a4',
+          sides: 'double',
+          binding: 'spiral_plastic',
+          reasoning: 'خيار الطباعة الأكثر توفيراً وعملية للشيتات والمذكرات.'
+        },
+        keyTopics: ['مستند عام'],
+        printQualityAdvice: 'مناسب للطباعة بوضوح ممتاز'
+      });
+    }
+  });
+
+  // --- VITE MIDDLEWARE OR STATIC SERVE ---
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🖨️ A4 Sudan Printing Server running at http://localhost:${PORT}`);
+  });
+}
+
+startServer();

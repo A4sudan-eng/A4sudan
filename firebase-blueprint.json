@@ -1,0 +1,30 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Print Order",
+      "description": "Represents a customer printing order at A4 Sudan Library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "university": { "type": "string" },
+        "college": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "deliveryLocation": { "type": "string" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "customerName", "customerPhone", "totalPrice"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of all customer printing orders"
+    }
+  }
+}
