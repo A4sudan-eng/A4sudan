@@ -1,0 +1,6 @@
+{
+  "name": "A4 Sudan",
+  "description": "Online printing and document delivery service for university students. Dynamic cost calculator, order tracking, and admin panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
