@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Trash2, Plus, Check, MapPin, Phone, User, 
   CreditCard, Truck, Store, Info, Sparkles, Download, Copy, AlertCircle, FileCheck,
-  Camera, Image as ImageIcon, X, Tag
+  Camera, Image as ImageIcon, X, Tag, BookOpen, GraduationCap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PrintFileOptions, PrintOrder, PricingRates, PaperSize, PrintColor, PrintSides, PaperWeight, BindingType, DeliveryMethod, PaymentMethod, DeliveryZone, Coupon } from '../types';
@@ -12,6 +12,7 @@ import { DELIVERY_ZONES } from '../data/initialData';
 import { saveOrderToCloud, auth } from '../lib/firebase';
 import { DeliveryRatesGuide } from './DeliveryRatesGuide';
 import { SheetLayoutPreview } from './SheetLayoutPreview';
+import { AllMaterialsPrintPreview } from './AllMaterialsPrintPreview';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -43,6 +44,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedAccNum, setCopiedAccNum] = useState<string | null>(null);
   const [showDeliveryGuideModal, setShowDeliveryGuideModal] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'compact' | 'detailed'>('compact');
 
   // Coupon state & handlers
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -129,6 +131,20 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   // Initialize preloaded files if passed (e.g. from SheetsHub)
   React.useEffect(() => {
     if (preloadedFiles && preloadedFiles.length > 0 && files.length === 0) {
+      // Auto extract shared academic pathway for the order
+      const firstNotes = preloadedFiles[0]?.notes || '';
+      const pathMatch = firstNotes.match(/المسار(?: الأكاديمي)?:?\s*\(([^)]+)\)/);
+      if (pathMatch && pathMatch[1]) {
+        const fullPath = pathMatch[1];
+        const parts = fullPath.split('⬅️').map(s => s.trim());
+        if (parts.length >= 2) {
+          setInstitution(parts[0]);
+          setSpecialization(parts.slice(1).join(' ⬅️ '));
+        } else {
+          setSpecialization(fullPath);
+        }
+      }
+
       const formatted: PrintFileOptions[] = preloadedFiles.map((p, idx) => {
         const pages = p.pageCount || 10;
         const color = p.color || 'bw';
@@ -137,7 +153,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
         const paperWeight = p.paperWeight || '70g';
         const binding = p.binding || 'spiral_plastic';
         const copies = p.copies || 1;
-        const pagesPerSheet = p.pagesPerSheet || 1;
+        const pagesPerSheet = p.pagesPerSheet || 2;
         const price = calculateFilePrice(pages, color, paperSize, sides, paperWeight, binding, copies, rates, pagesPerSheet);
 
         return {
@@ -199,7 +215,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       const defaultWeight: PaperWeight = '70g';
       const defaultBinding: BindingType = 'spiral_plastic';
       const defaultCopies = 1;
-      const defaultPagesPerSheet = 1;
+      const defaultPagesPerSheet = 2;
 
       const price = calculateFilePrice(estPages, defaultColor, defaultSize, defaultSides, defaultWeight, defaultBinding, defaultCopies, rates, defaultPagesPerSheet);
       const fileId = `file-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`;
@@ -349,6 +365,26 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   };
 
   // Pricing Totals
+  const isLibraryOrder = Boolean(
+    (preloadedFiles && preloadedFiles.length > 0) ||
+    files.some(f => f.notes?.includes('شيت من') || f.id.startsWith('file-preload'))
+  );
+
+  // Single Unified Academic Pathway calculation across all materials in the order
+  const extractedAcademicPath = React.useMemo(() => {
+    for (const f of files) {
+      if (f.notes) {
+        const match = f.notes.match(/المسار(?: الأكاديمي)?:?\s*\(([^)]+)\)/);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+    }
+    if (institution || specialization) {
+      return `${institution} ${specialization ? `• ${specialization}` : ''}`.trim();
+    }
+    return 'جامعة النيلين • كلية التجارة • المستوى الأول';
+  }, [files, institution, specialization]);
   const totalPagesSum = files.reduce((acc, f) => acc + (f.pageCount * f.copies), 0);
   const totalPrintedSheetsSum = files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0);
   const subtotalSum = files.reduce((acc, f) => acc + f.calculatedPrice, 0);
@@ -586,14 +622,17 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   <strong className="text-slate-900 text-sm font-mono dir-ltr">{createdOrder.customerPhone}</strong>
                 </div>
 
-                <div>
-                  <span className="text-slate-500 block font-bold mb-0.5">🏛️ الجامعة / المؤسسة:</span>
-                  <strong className="text-slate-900 text-sm font-bold">{createdOrder.institution || 'غير محدد'}</strong>
-                </div>
-
-                <div>
-                  <span className="text-slate-500 block font-bold mb-0.5">🎓 التخصص / الكلية / الدفعة:</span>
-                  <strong className="text-slate-900 text-sm font-bold">{createdOrder.specialization || 'غير محدد'}</strong>
+                <div className="sm:col-span-2 md:col-span-3 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <GraduationCap className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="text-slate-600 font-bold text-xs shrink-0">المسار الأكاديمي الموحد للطلب:</span>
+                    <strong className="text-emerald-950 font-black text-xs sm:text-sm truncate">
+                      {createdOrder.institution || 'جامعة النيلين'} {createdOrder.specialization ? `• ${createdOrder.specialization}` : ''}
+                    </strong>
+                  </div>
+                  <span className="text-[10px] bg-emerald-200 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded font-black shrink-0">
+                    مسار موحد لكافة المواد ✓
+                  </span>
                 </div>
 
                 <div>
@@ -752,166 +791,238 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               1
             </div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-              رفع الملفات والمستندات (PDF, Word, الصور)
+              {isLibraryOrder ? 'المواد والشيتات الدراسية المختارة من المكتبة' : 'رفع الملفات والمستندات (PDF, Word, الصور)'}
             </h2>
           </div>
 
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            className="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50 hover:bg-amber-50/50 rounded-2xl p-8 text-center cursor-pointer transition-all group"
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              multiple
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png"
-              className="hidden"
-            />
-            <div className="w-16 h-16 bg-amber-100 group-hover:bg-amber-200 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-3 transition-all group-hover:scale-110">
-              <Upload className="w-8 h-8" />
+          {isLibraryOrder ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-emerald-950 mb-2 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-sm shrink-0">
+                  <BookOpen className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base text-emerald-950">
+                    طلب طباعة شيتات معتمدة من مكتبة الكلية ودليل الليدر
+                  </h3>
+                  <p className="text-xs text-emerald-800 mt-0.5">
+                    تم تحميل ملفات ومستندات المذكرات والشيتات المحددة تلقائياً من المكتبة دون الحاجة لرفع أية ملفات.
+                  </p>
+                </div>
+              </div>
+              <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs px-3 py-1.5 rounded-xl font-bold shrink-0">
+                ملفات معتمدة ومجهزة ✓
+              </span>
             </div>
-            <h3 className="font-bold text-slate-800 text-base sm:text-lg">
-              اضغط هنا لاختيار الملفات أو اسحبها وأسقطها
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              يدعم ملفات PDF، مذكرات Word، الشيتات، والمستندات المصورة (حجم أقصى 50MB للملف)
-            </p>
-          </div>
+          ) : files.length === 0 && (
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className="border-2 border-dashed border-slate-300 hover:border-amber-500 bg-slate-50 hover:bg-amber-50/50 rounded-2xl p-8 text-center cursor-pointer transition-all group"
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                multiple
+                accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png"
+                className="hidden"
+              />
+              <div className="w-16 h-16 bg-amber-100 group-hover:bg-amber-200 text-amber-800 rounded-2xl flex items-center justify-center mx-auto mb-3 transition-all group-hover:scale-110">
+                <Upload className="w-8 h-8" />
+              </div>
+              <h3 className="font-bold text-slate-800 text-base sm:text-lg">
+                اضغط هنا لاختيار الملفات أو اسحبها وأسقطها
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                يدعم ملفات PDF، مذكرات Word، الشيتات، والمستندات المصورة (حجم أقصى 50MB للملف)
+              </p>
+            </div>
+          )}
 
           {/* List of uploaded files & options */}
           {files.length > 0 && (
             <div className="mt-6 space-y-6">
-              <h3 className="font-bold text-slate-900 text-base flex items-center justify-between">
-                <span>الملفات المحددة للطباعة ({files.length}):</span>
-                <span className="text-xs text-amber-800 bg-amber-100 px-2.5 py-1 rounded-md font-semibold">
-                  مجموع الصفحات: {totalPagesSum} صفحة
-                </span>
-              </h3>
+              
+              {/* Header & View Mode Switcher */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-100 p-3 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-slate-900 text-sm sm:text-base">
+                    المواد والشيتات المحددة ({files.length}):
+                  </span>
+                  <span className="text-xs text-amber-900 bg-amber-200 px-2.5 py-0.5 rounded-full font-bold">
+                    {totalPagesSum} صفحة إجمالية
+                  </span>
+                </div>
 
-              {files.map((file, idx) => (
-                <div 
-                  key={file.id} 
-                  className="bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200 relative space-y-4"
-                >
+                {/* Switcher Buttons */}
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-300 w-full sm:w-auto justify-center">
                   <button
                     type="button"
-                    onClick={() => removeFile(file.id)}
-                    className="absolute top-4 left-4 text-slate-400 hover:text-rose-600 transition-colors p-1"
-                    title="حذف الملف"
+                    onClick={() => setPreviewMode('compact')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      previewMode === 'compact'
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>المعاينة الشاملة والمختصرة 🎨</span>
                   </button>
 
-                  {/* File name & size */}
-                  <div className="flex items-center gap-3 pl-8">
-                    <div className="p-3 bg-amber-500 text-slate-950 rounded-lg">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm sm:text-base line-clamp-1">
-                        {file.fileName}
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        حجم الملف: {(file.fileSize / (1024 * 1024)).toFixed(2)} MB
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Options Grid for this file */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm pt-2">
-                    
-                    {/* Page Count */}
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">
-                        عدد صفحات المستند الأصلي:
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="2000"
-                        value={file.pageCount}
-                        onChange={e => updateFileOption(file.id, { pageCount: parseInt(e.target.value) || 1 })}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                      <div className="mt-1.5 p-2 bg-emerald-50/90 border border-emerald-300 rounded-lg text-xs space-y-0.5">
-                        <div className="flex items-center justify-between text-emerald-950 font-bold">
-                          <span>الورق المطبوع (÷{file.pagesPerSheet || 1}):</span>
-                          <span className="text-amber-800 text-sm font-extrabold bg-white px-2 py-0.5 rounded border border-amber-300">
-                            {Math.ceil(file.pageCount / (file.pagesPerSheet || 1))} ورقة
-                          </span>
-                        </div>
-                        {file.sides === 'double' && (
-                          <p className="text-[10px] text-emerald-800 font-medium">
-                            ورق وجهين: {Math.ceil(Math.ceil(file.pageCount / (file.pagesPerSheet || 1)) / 2)} ورقة مزدوجة
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Pages Per Sheet (Layout / Slides & Visual Diagram) */}
-                    <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 mt-2">
-                      <SheetLayoutPreview
-                        pagesPerSheet={file.pagesPerSheet || 1}
-                        sides={file.sides}
-                        color={file.color}
-                        pageCount={file.pageCount}
-                        onSelectPagesPerSheet={(pps) => updateFileOption(file.id, { pagesPerSheet: pps })}
-                        onSelectSides={(s) => updateFileOption(file.id, { sides: s })}
-                        interactive={true}
-                      />
-                    </div>
-
-                    {/* Paper Size - Fixed to A4 */}
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">
-                        حجم الورق:
-                      </label>
-                      <div className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-bold text-sm flex items-center justify-between">
-                        <span>A4 (حجم قياسي)</span>
-                        <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-medium border border-amber-300">ثابت</span>
-                      </div>
-                    </div>
-
-                    {/* Number of Copies */}
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">
-                        عدد النسخ المطلوبة:
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={file.copies}
-                        onChange={e => updateFileOption(file.id, { copies: parseInt(e.target.value) || 1 })}
-                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                    </div>
-
-                    {/* File Subtotal */}
-                    <div className="flex flex-col justify-end">
-                      <div className="bg-amber-100/80 p-2.5 rounded-lg border border-amber-200 text-center">
-                        <span className="text-[11px] text-amber-900 block font-medium">تكلفة هذا الملف:</span>
-                        <strong className="text-amber-950 font-bold text-base">
-                          {formatSDG(file.calculatedPrice)}
-                        </strong>
-                      </div>
-                    </div>
-
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('detailed')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      previewMode === 'detailed'
+                        ? 'bg-slate-800 text-white font-black shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>العرض التفصيلي لكل شيت ⚙️</span>
+                  </button>
                 </div>
-              ))}
+              </div>
 
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl border border-slate-300 flex items-center justify-center gap-2 transition-colors text-sm"
-              >
-                <Plus className="w-4 h-4" />
-                إضافة ملف آخر لهذا الطلب
-              </button>
+              {/* View Mode 1: Compact All Materials Visual Matrix */}
+              {previewMode === 'compact' ? (
+                <AllMaterialsPrintPreview
+                  files={files}
+                  onUpdateFileOption={updateFileOption}
+                  onRemoveFile={removeFile}
+                  isLibraryOrder={isLibraryOrder}
+                  academicPath={extractedAcademicPath}
+                />
+              ) : (
+                /* View Mode 2: Detailed Per-File Cards */
+                <div className="space-y-6">
+                  {files.map((file, idx) => (
+                    <div 
+                      key={file.id} 
+                      className="bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200 relative space-y-4"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => removeFile(file.id)}
+                        className="absolute top-4 left-4 text-slate-400 hover:text-rose-600 transition-colors p-1"
+                        title="حذف الملف"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+
+                      {/* File name & size */}
+                      <div className="flex items-center gap-3 pl-8">
+                        <div className="p-3 bg-amber-500 text-slate-950 rounded-lg">
+                          <FileText className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-sm sm:text-base line-clamp-1">
+                            {file.fileName}
+                          </h4>
+                          <p className="text-xs text-slate-500">
+                            حجم الملف: {(file.fileSize / (1024 * 1024)).toFixed(2)} MB
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Options Grid for this file */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm pt-2">
+                        
+                        {/* Page Count */}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            عدد صفحات المستند الأصلي:
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="2000"
+                            value={file.pageCount}
+                            onChange={e => updateFileOption(file.id, { pageCount: parseInt(e.target.value) || 1 })}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                          <div className="mt-1.5 p-2 bg-emerald-50/90 border border-emerald-300 rounded-lg text-xs space-y-0.5">
+                            <div className="flex items-center justify-between text-emerald-950 font-bold">
+                              <span>الورق المطبوع (÷{file.pagesPerSheet || 1}):</span>
+                              <span className="text-amber-800 text-sm font-extrabold bg-white px-2 py-0.5 rounded border border-amber-300">
+                                {Math.ceil(file.pageCount / (file.pagesPerSheet || 1))} ورقة
+                              </span>
+                            </div>
+                            {file.sides === 'double' && (
+                              <p className="text-[10px] text-emerald-800 font-medium">
+                                ورق وجهين: {Math.ceil(Math.ceil(file.pageCount / (file.pagesPerSheet || 1)) / 2)} ورقة مزدوجة
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Pages Per Sheet (Layout / Slides & Visual Diagram) */}
+                        <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 mt-2">
+                          <SheetLayoutPreview
+                            pagesPerSheet={file.pagesPerSheet || 1}
+                            sides={file.sides}
+                            color={file.color}
+                            pageCount={file.pageCount}
+                            onSelectPagesPerSheet={(pps) => updateFileOption(file.id, { pagesPerSheet: pps })}
+                            onSelectSides={(s) => updateFileOption(file.id, { sides: s })}
+                            interactive={true}
+                          />
+                        </div>
+
+                        {/* Paper Size - Fixed to A4 */}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            حجم الورق:
+                          </label>
+                          <div className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-bold text-sm flex items-center justify-between">
+                            <span>A4 (حجم قياسي)</span>
+                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-medium border border-amber-300">ثابت</span>
+                          </div>
+                        </div>
+
+                        {/* Number of Copies */}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            عدد النسخ المطلوبة:
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={file.copies}
+                            onChange={e => updateFileOption(file.id, { copies: parseInt(e.target.value) || 1 })}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* File Subtotal */}
+                        <div className="flex flex-col justify-end">
+                          <div className="bg-amber-100/80 p-2.5 rounded-lg border border-amber-200 text-center">
+                            <span className="text-[11px] text-amber-900 block font-medium">تكلفة هذا الملف:</span>
+                            <strong className="text-amber-950 font-bold text-base">
+                              {formatSDG(file.calculatedPrice)}
+                            </strong>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!isLibraryOrder && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl border border-slate-300 flex items-center justify-center gap-2 transition-colors text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  إضافة ملف آخر لهذا الطلب
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1592,18 +1703,41 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
 
                   {/* Materials list summary */}
                   {files.length > 0 && (
-                    <div className="bg-emerald-950/70 p-3 rounded-xl border border-emerald-700/60 text-xs space-y-2">
+                    <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-700/80 text-xs space-y-2">
                       <div className="text-emerald-300 font-bold border-b border-emerald-800 pb-1 flex justify-between items-center">
-                        <span>📚 أسامي المواد المرفقة ({files.length}):</span>
-                        <span className="text-[10px] text-emerald-200">{totalPagesSum} صفحة إجمالية</span>
+                        <span>📚 تفاصيل نمط طباعة المواد ({files.length}):</span>
+                        <span className="text-[10px] text-emerald-200 font-mono">{totalPagesSum} صفحة ➔ {totalPrintedSheetsSum} ورقة</span>
                       </div>
-                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                        {files.map((f, i) => (
-                          <div key={i} className="text-emerald-100 text-[11px] flex justify-between items-center bg-emerald-900/80 p-1.5 rounded border border-emerald-700/60">
-                            <span className="truncate max-w-[180px] font-semibold text-white">{i + 1}. {f.fileName}</span>
-                            <span className="text-amber-300 font-mono text-[10px] shrink-0">{f.copies} نسخة • {formatSDG(f.calculatedPrice)}</span>
-                          </div>
-                        ))}
+                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                        {files.map((f, i) => {
+                          const pps = f.pagesPerSheet || 1;
+                          const sheetsPerCopy = Math.ceil(f.pageCount / pps);
+                          const physicalPapers = Math.ceil(sheetsPerCopy / (f.sides === 'double' ? 2 : 1));
+
+                          return (
+                            <div key={i} className="text-emerald-100 text-[11px] bg-emerald-900/90 p-2 rounded-lg border border-emerald-700/70 space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold text-white truncate max-w-[190px]">
+                                  {i + 1}. {f.fileName}
+                                </span>
+                                <span className="text-amber-300 font-mono text-[11px] font-bold shrink-0">
+                                  {formatSDG(f.calculatedPrice)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-medium text-emerald-200">
+                                <span className="bg-emerald-800 px-1.5 py-0.5 rounded text-white font-bold">
+                                  {pps === 2 ? '2:1 عادي' : pps === 4 ? '4:1 شائع ⭐' : pps === 8 ? '8:1 اسلايت' : `${pps} في 1`}
+                                </span>
+                                <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">
+                                  وجهين 🔄
+                                </span>
+                                <span className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded font-black font-mono">
+                                  {physicalPapers * f.copies} ورقة مطبوعة
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

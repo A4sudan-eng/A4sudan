@@ -3,8 +3,8 @@ import { PrintSides, PrintColor } from '../types';
 import { Layers, FileText, CheckCircle2 } from 'lucide-react';
 
 interface SheetLayoutPreviewProps {
-  pagesPerSheet: number; // 1, 2, 4, 8
-  sides: PrintSides; // 'single' | 'double'
+  pagesPerSheet?: number; // 2, 4, 8
+  sides?: PrintSides; // 'single' | 'double'
   color?: PrintColor;
   pageCount?: number;
   onSelectPagesPerSheet?: (pps: number) => void;
@@ -13,7 +13,7 @@ interface SheetLayoutPreviewProps {
 }
 
 export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
-  pagesPerSheet = 1,
+  pagesPerSheet = 2,
   sides = 'double',
   color = 'bw',
   pageCount,
@@ -23,25 +23,25 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
 }) => {
   const ppsOptions = [
     {
-      value: 1,
-      title: 'القياسي (صفحة بالورقة)',
-      subtitle: 'حجم عادي 1:1',
-      desc: 'قراءة مريحة جداً (صفحة واحدة لكل ورقة)',
-      badge: 'القياسي (1:1)',
-    },
-    {
       value: 2,
-      title: 'الأكثر طلباً (صفحتين)',
-      subtitle: '2 في 1 (2in1)',
-      desc: 'قسمة عدد الصفحات على 2 (توفير 50%)',
-      badge: 'الأكثر طلباً (÷2) ⭐',
+      title: 'عادي (صفحتين بالورقة)',
+      subtitle: 'توزيع 2:1',
+      desc: 'قراءة مريحة وواضحة (صفحتين لكل ورقة)',
+      badge: '2:1 عادي',
     },
     {
       value: 4,
-      title: 'توفير 75% (4 صفحات)',
-      subtitle: '4 في 1 (4in1)',
-      desc: 'قسمة عدد الصفحات على 4 (توفير 75%)',
-      badge: 'توفير 75% (÷4)',
+      title: 'شائع ⭐ (4 صفحات بالورقة)',
+      subtitle: 'توزيع 4:1 ⭐',
+      desc: 'الخيار الشائع والأكثر طلباً (4 صفحات لكل ورقة)',
+      badge: '4:1 شائع ⭐',
+    },
+    {
+      value: 8,
+      title: 'اسلايت (8 صفحات بالورقة)',
+      subtitle: 'توزيع 8:1',
+      desc: 'مناسب لشرائح العروض والسلايدات (8 صفحات لكل ورقة)',
+      badge: '8:1 اسلايت',
     },
   ];
 
@@ -55,7 +55,7 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
     const accentBg = isColorMode ? 'bg-amber-100 border-amber-300' : 'bg-slate-100 border-slate-300';
     const headerBg = isColorMode ? 'bg-amber-400' : 'bg-slate-400';
 
-    if (num === 1) {
+    if (num === 2) {
       return (
         <div className="w-full h-full p-2 flex flex-col gap-1.5 justify-center">
           <div className={`w-full h-full border rounded-sm ${accentBg} p-1.5 flex flex-col gap-1 shadow-xs`}>
@@ -64,7 +64,6 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
               <div className="h-1 bg-slate-200 rounded-xs w-full" />
               <div className="h-1 bg-slate-200 rounded-xs w-4/5" />
               <div className="h-1 bg-slate-200 rounded-xs w-full" />
-              <div className="h-1 bg-slate-200 rounded-xs w-3/4" />
             </div>
             <div className="text-[8px] font-bold text-center text-slate-500">صفحة 1</div>
           </div>
@@ -72,7 +71,7 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
       );
     }
 
-    if (num === 2) {
+    if (num === 4) {
       return (
         <div className="w-full h-full p-1.5 grid grid-cols-2 gap-1 justify-center items-center">
           {[1, 2].map(p => (
@@ -81,7 +80,6 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
               <div className="space-y-0.5 flex-1">
                 <div className="h-0.5 bg-slate-200 rounded-xs w-full" />
                 <div className="h-0.5 bg-slate-200 rounded-xs w-2/3" />
-                <div className="h-0.5 bg-slate-200 rounded-xs w-full" />
               </div>
               <div className="text-[7px] font-bold text-center text-slate-600">صفحة {p}</div>
             </div>
@@ -90,7 +88,7 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
       );
     }
 
-    // num === 4 or default
+    // num === 8 or default
     return (
       <div className="w-full h-full p-1.5 grid grid-cols-2 grid-rows-2 gap-1 items-center">
         {[1, 2, 3, 4].map(p => (

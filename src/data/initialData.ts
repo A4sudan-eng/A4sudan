@@ -141,8 +141,8 @@ export const DELIVERY_ZONES: DeliveryZone[] = [
 ];
 
 export const DEFAULT_PRICING_RATES: PricingRates = {
-  bwPerPage: 60, // 60 SDG per B&W page
-  colorPerPage: 200, // 200 SDG per Color page
+  bwPerPage: 200, // 200 SDG per Physical Paper Sheet (سعر الورقة المطبوعة أبيض وأسود)
+  colorPerPage: 500, // 500 SDG per Physical Paper Sheet (سعر الورقة المطبوعة ألوان)
   paperSizeMultiplier: {
     a4: 1.0,
     a3: 2.2,

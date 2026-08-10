@@ -9,39 +9,44 @@ export function calculateFilePrice(
   binding: BindingType,
   copies: number,
   rates: PricingRates,
-  pagesPerSheet: number = 1
+  pagesPerSheet: number = 2
 ): number {
   if (pages <= 0 || copies <= 0) return 0;
 
-  const pps = pagesPerSheet && pagesPerSheet > 0 ? pagesPerSheet : 1;
+  // pps: pages printed per physical sheet layout (2:1 العادي = 2, 4:1 الشائع = 4, 8:1 الاسلايت = 8)
+  const pps = pagesPerSheet && pagesPerSheet > 0 ? pagesPerSheet : 2;
+  // Effective physical paper sheets count
   const effectiveSheets = Math.ceil(pages / pps);
 
-  // Base page rate
-  let basePageRate = rates.bwPerPage;
+  // Price per physical sheet (سعر الورقة المطبوعة)
+  const bwRate = rates.bwPerPage || 200;
+  const colorRate = rates.colorPerPage || 500;
+
+  let baseSheetRate = bwRate;
   if (color === 'color') {
-    basePageRate = rates.colorPerPage;
+    baseSheetRate = colorRate;
   } else if (color === 'mixed') {
-    // Mixed: 2 pages color cover + rest B&W
-    const coverPages = Math.min(2, pages);
-    const bodyPages = Math.max(0, pages - coverPages);
-    const mixedPageCost = (coverPages * rates.colorPerPage) + (bodyPages * rates.bwPerPage);
-    basePageRate = mixedPageCost / pages;
+    // Mixed: 1 cover sheet in color + rest body sheets B&W
+    const coverSheets = Math.min(1, effectiveSheets);
+    const bodySheets = Math.max(0, effectiveSheets - coverSheets);
+    const mixedSheetCost = (coverSheets * colorRate) + (bodySheets * bwRate);
+    baseSheetRate = mixedSheetCost / effectiveSheets;
   }
 
   // Size multiplier
   const sizeMult = rates.paperSizeMultiplier[paperSize] || 1.0;
 
-  // Double sides discount
-  const sidesMult = sides === 'double' ? rates.sidesDiscountRatio : 1.0;
+  // Double sides multiplier
+  const sidesMult = sides === 'double' ? (rates.sidesDiscountRatio || 1.0) : 1.0;
 
-  // Paper weight extra per page
+  // Paper weight extra per sheet
   const weightExtra = rates.paperWeightPrice[paperWeight] || 0;
 
-  // Cost per physical sheet/side
-  const singlePageCost = (basePageRate * sizeMult * sidesMult) + weightExtra;
+  // Cost per physical paper sheet
+  const singleSheetCost = (baseSheetRate * sizeMult * sidesMult) + weightExtra;
 
-  // Total pages cost for 1 copy based on effective physical sheets
-  const pagesCostOneCopy = Math.round(singlePageCost * effectiveSheets);
+  // Total paper sheets cost for 1 copy
+  const pagesCostOneCopy = Math.round(singleSheetCost * effectiveSheets);
 
   // Binding cost
   const bindingCostOneCopy = rates.bindingPrice[binding] || 0;
@@ -49,7 +54,7 @@ export function calculateFilePrice(
   // Total per copy
   const totalPerCopy = pagesCostOneCopy + bindingCostOneCopy;
 
-  // Total for all copies
+  // Grand total for all copies
   const grandTotal = totalPerCopy * copies;
 
   return Math.round(grandTotal);

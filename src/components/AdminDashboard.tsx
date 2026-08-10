@@ -126,11 +126,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Dashboard Tab & Filter States
-  const [activeTab, setActiveTab] = useState<'orders' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs'>('orders');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingRates, setEditingRates] = useState<PricingRates>({ ...rates });
   const [isSaved, setIsSaved] = useState(false);
+  const [simSheetPrice, setSimSheetPrice] = useState<number>(rates.bwPerPage || 200);
 
   // Admin Performer Name State
   const [adminPerformerName, setAdminPerformerName] = useState<string>(() => {
@@ -342,7 +343,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Recalculate estimated price when pages or rates change
   useEffect(() => {
     if (sheetPages > 0) {
-      const calculated = sheetPages * (rates.bwPerPage || 60) + (rates.bindingPrice?.spiral_plastic || 1200);
+      const printedSheets = Math.ceil(sheetPages / 2);
+      const calculated = printedSheets * (rates.bwPerPage || 200) + (rates.bindingPrice?.spiral_plastic || 1200);
       setSheetPrice(calculated);
     }
   }, [sheetPages, rates]);
@@ -1058,6 +1060,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             الطلبات الواردة ({orders.length})
           </button>
           <button
+            onClick={() => setActiveTab('pricing')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'pricing' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            <span>تعريف أسعار الورق والتسعير</span>
+          </button>
+          <button
             onClick={() => setActiveTab('sheets_manage')}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'sheets_manage' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
@@ -1537,11 +1548,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900 font-bold">
                                 {f.pageCount} صفحة
                               </span>
-                              {f.pagesPerSheet && f.pagesPerSheet > 1 && (
-                                <span className="text-emerald-900 font-bold bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
-                                  {f.pagesPerSheet} في الورقة ({Math.ceil(f.pageCount / f.pagesPerSheet)} ورقة مطبوعة)
-                                </span>
-                              )}
+                              <span className="text-emerald-950 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
+                                <span>{f.pagesPerSheet === 8 ? 'الاسلايت (8:1)' : f.pagesPerSheet === 4 ? 'الشائع ⭐ (4:1)' : 'العادي (2:1)'}</span>
+                                <span>•</span>
+                                <span>{Math.ceil(f.pageCount / (f.pagesPerSheet || 2))} ورقة مطبوعة</span>
+                                <span className="text-[10px] text-emerald-800 font-bold">({rates.bwPerPage || 200}ج/ورقة)</span>
+                              </span>
                               <span>• النوع: {f.color === 'color' ? 'ألوان 🎨' : f.color === 'mixed' ? 'غلاف ألوان والداخل أسود' : 'أسود 🖤'}</span>
                               <span>• الوجهين: {f.sides === 'double' ? 'طباعة وجهين 📄' : 'وجه واحد'}</span>
                               <span>• التغليف: {f.binding === 'spiral_plastic' ? 'سلك حلزوني' : f.binding === 'stapled' ? 'كبس وتدبيس' : f.binding === 'softcover' ? 'غلاف مجلد' : f.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف'}</span>
@@ -2125,10 +2137,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     value={editingSheet.pageCount}
                     onChange={e => {
                       const pages = parseInt(e.target.value) || 1;
+                      const printedSheets = Math.ceil(pages / 2);
                       setEditingSheet({ 
                         ...editingSheet, 
                         pageCount: pages,
-                        priceEstimate: pages * (rates.bwPerPage || 60) + (rates.bindingPrice?.spiral_plastic || 1200)
+                        priceEstimate: printedSheets * (rates.bwPerPage || 200) + (rates.bindingPrice?.spiral_plastic || 1200)
                       });
                     }}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-black text-slate-900"
@@ -2187,6 +2200,229 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* PRICING RATES & SIMULATOR TAB */}
+      {activeTab === 'pricing' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xl max-w-5xl mx-auto space-y-8">
+          <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 text-white rounded-2xl p-6 shadow-md border border-emerald-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-extrabold flex items-center gap-2 text-emerald-300">
+                <DollarSign className="w-6 h-6 text-amber-400" />
+                <span>إدارة تعريفات أسعار الورق والطباعة (سعر الورقة المطبوعة)</span>
+              </h2>
+              <p className="text-xs text-emerald-100/90 mt-1 leading-relaxed">
+                التسعير بالمكتبة يعتمد على <strong>سعر الورقة المطبوعة الفعلية (Sheet Price)</strong> وليس فقط عدد صفحات الملف. حيث يتم قسمة صفحات الملف على نسبة توزيع الصفحات (2:1 العادي = صفحتين في الورقة، 4:1 الشائع = 4 صفحات في الورقة، 8:1 الاسلايت = 8 صفحات في الورقة).
+              </p>
+            </div>
+            <span className="bg-amber-400 text-amber-950 font-black px-4 py-2 rounded-xl text-xs shrink-0 shadow">
+              سعر الورقة الحالي: {editingRates.bwPerPage || 200} ج.س
+            </span>
+          </div>
+
+          {isSaved && (
+            <div className="p-4 bg-emerald-50 border-2 border-emerald-500 rounded-2xl text-emerald-950 font-black text-sm flex items-center gap-3 shadow-md animate-pulse">
+              <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+              <span>تم حفظ وتحديث تعريفات أسعار الورق والخدمات بنجاح! 🎉</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveRates} className="space-y-6 text-xs sm:text-sm">
+            {/* Sheet Rates Section */}
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 border-b border-slate-200 pb-2">
+                <Printer className="w-5 h-5 text-emerald-600" />
+                <span>1. سعر الورقة المطبوعة الأساسية (Price per Paper Sheet)</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <label className="block font-black text-slate-900 mb-1">سعر الورقة المطبوعة (أبيض وأسود) *</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={editingRates.bwPerPage}
+                      onChange={e => {
+                        const val = Number(e.target.value) || 0;
+                        setEditingRates({ ...editingRates, bwPerPage: val });
+                        setSimSheetPrice(val);
+                      }}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-mono font-black text-slate-900 text-base focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                    <span className="absolute left-3 top-3.5 text-xs text-slate-500 font-bold pointer-events-none">ج.س / ورقة</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    هذا السعر يُحسب لكل ورقة مطبوعة فعلياً (مثال: 100 صفحة في العادي 2:1 = 50 ورقة × {editingRates.bwPerPage}ج = {50 * (editingRates.bwPerPage || 200)}ج)
+                  </p>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <label className="block font-black text-slate-900 mb-1">سعر الورقة المطبوعة (ألوان 🎨) *</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={editingRates.colorPerPage}
+                      onChange={e => setEditingRates({ ...editingRates, colorPerPage: Number(e.target.value) || 0 })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-mono font-black text-slate-900 text-base focus:ring-2 focus:ring-emerald-500 outline-none"
+                    />
+                    <span className="absolute left-3 top-3.5 text-xs text-slate-500 font-bold pointer-events-none">ج.س / ورقة</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">سعر الطباعة الملونة الكاملة للورقة الواحدة</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Binding Prices */}
+            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+              <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 border-b border-slate-200 pb-2">
+                <Layers className="w-5 h-5 text-amber-600" />
+                <span>2. أسعار التغليف والتجليد للطلب (Binding Rates)</span>
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">بدون تغليف</label>
+                  <input
+                    type="number"
+                    value={editingRates.bindingPrice?.none ?? 0}
+                    onChange={e => setEditingRates({ ...editingRates, bindingPrice: { ...editingRates.bindingPrice, none: Number(e.target.value) || 0 } })}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">سلك حلزوني</label>
+                  <input
+                    type="number"
+                    value={editingRates.bindingPrice?.spiral_plastic ?? 1200}
+                    onChange={e => setEditingRates({ ...editingRates, bindingPrice: { ...editingRates.bindingPrice, spiral_plastic: Number(e.target.value) || 0 } })}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">كبس وتدبيس</label>
+                  <input
+                    type="number"
+                    value={editingRates.bindingPrice?.stapled ?? 150}
+                    onChange={e => setEditingRates({ ...editingRates, bindingPrice: { ...editingRates.bindingPrice, stapled: Number(e.target.value) || 0 } })}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">غلاف مجلد حراري</label>
+                  <input
+                    type="number"
+                    value={editingRates.bindingPrice?.softcover ?? 2500}
+                    onChange={e => setEditingRates({ ...editingRates, bindingPrice: { ...editingRates.bindingPrice, softcover: Number(e.target.value) || 0 } })}
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl transition-colors shadow-lg flex items-center justify-center gap-2 cursor-pointer text-base"
+            >
+              <Save className="w-5 h-5" />
+              <span>حفظ وتطبيق تعريفة الأسعار الجديدة فوراً</span>
+            </button>
+          </form>
+
+          {/* Interactive Live Sheet Pricing Simulator */}
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50/80 p-6 rounded-3xl border-2 border-amber-300/80 space-y-5 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-amber-200 pb-3">
+              <div>
+                <h3 className="text-base font-black text-amber-950 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-amber-600" />
+                  <span>حاسبة وسيموليتر تسعير الورق المباشرة (Live Sheet Pricing Calculator)</span>
+                </h3>
+                <p className="text-xs text-amber-800">اختبار مباشر لكيفية حساب التكلفة بناءً على عدد الصفحات وسعر الورقة للأنواع الثلاثة</p>
+              </div>
+              <span className="bg-amber-200 text-amber-950 font-extrabold px-3 py-1 rounded-full text-xs border border-amber-300">
+                100% مطابقة لقاعدة الحساب
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-amber-950 font-bold mb-1">عدد صفحات ملف PDF للتجربة:</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={simPages}
+                  onChange={e => setSimPages(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full bg-white border border-amber-400 rounded-xl p-3 font-mono font-black text-slate-900 text-base shadow-inner focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-amber-950 font-bold mb-1">سعر الورقة المطبوعة (SDG):</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={simSheetPrice}
+                  onChange={e => setSimSheetPrice(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-full bg-white border border-amber-400 rounded-xl p-3 font-mono font-black text-slate-900 text-base shadow-inner focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Output Cards Comparison */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              {/* 1. Normal (2:1) */}
+              <div className="bg-white p-4 rounded-2xl border-2 border-emerald-400 shadow-sm space-y-2">
+                <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                  <span className="font-black text-emerald-950 text-sm">📄 العادي (2:1)</span>
+                  <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">الافتراضي</span>
+                </div>
+                <div className="text-xs text-slate-600 space-y-1">
+                  <p>• قسمة الصفحات: {simPages} ÷ 2 = <strong className="text-emerald-950 font-black">{Math.ceil(simPages / 2)} ورقة مطبوعة</strong></p>
+                  <p>• سعر الورقة: {simSheetPrice} ج.س</p>
+                  <p className="pt-2 text-sm font-black text-emerald-900 bg-emerald-50 p-2 rounded-xl text-center border border-emerald-200">
+                    السعر الإجمالي: {formatSDG(Math.ceil(simPages / 2) * simSheetPrice)}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. Popular (4:1) */}
+              <div className="bg-white p-4 rounded-2xl border-2 border-amber-400 shadow-sm space-y-2">
+                <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+                  <span className="font-black text-amber-950 text-sm">⭐ الشائع (4:1)</span>
+                  <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[10px]">الأكثر طلباً</span>
+                </div>
+                <div className="text-xs text-slate-600 space-y-1">
+                  <p>• قسمة الصفحات: {simPages} ÷ 4 = <strong className="text-amber-950 font-black">{Math.ceil(simPages / 4)} ورقة مطبوعة</strong></p>
+                  <p>• سعر الورقة: {simSheetPrice} ج.س</p>
+                  <p className="pt-2 text-sm font-black text-amber-900 bg-amber-50 p-2 rounded-xl text-center border border-amber-200">
+                    السعر الإجمالي: {formatSDG(Math.ceil(simPages / 4) * simSheetPrice)}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3. Slide (8:1) */}
+              <div className="bg-white p-4 rounded-2xl border-2 border-blue-400 shadow-sm space-y-2">
+                <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                  <span className="font-black text-blue-950 text-sm">📊 الاسلايت (8:1)</span>
+                  <span className="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded text-[10px]">للسلايدات</span>
+                </div>
+                <div className="text-xs text-slate-600 space-y-1">
+                  <p>• قسمة الصفحات: {simPages} ÷ 8 = <strong className="text-blue-950 font-black">{Math.ceil(simPages / 8)} ورقة مطبوعة</strong></p>
+                  <p>• سعر الورقة: {simSheetPrice} ج.س</p>
+                  <p className="pt-2 text-sm font-black text-blue-900 bg-blue-50 p-2 rounded-xl text-center border border-blue-200">
+                    السعر الإجمالي: {formatSDG(Math.ceil(simPages / 8) * simSheetPrice)}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
