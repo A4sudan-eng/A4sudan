@@ -36,10 +36,21 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const [selectedLevelNum, setSelectedLevelNum] = useState<number | null>(1);
   const [selectedSemesterNum, setSelectedSemesterNum] = useState<number | null>(1);
 
-  // Multi-selection state
+  // Multi-selection & Copies state
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => 
     SAMPLE_STUDY_SHEETS.filter(s => s.isAvailable !== false).map(s => s.id)
   );
+  const [sheetCopies, setSheetCopies] = useState<Record<string, number>>({});
+
+  const getCopies = (sheetId: string) => sheetCopies[sheetId] || 1;
+
+  const updateSheetCopies = (sheetId: string, delta: number) => {
+    setSheetCopies(prev => {
+      const current = prev[sheetId] || 1;
+      const updated = Math.max(1, current + delta);
+      return { ...prev, [sheetId]: updated };
+    });
+  };
 
   // New sheet contribution form state
   const [newTitle, setNewTitle] = useState('');
@@ -151,7 +162,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const activeSheetsInView = activeMode === 'leader' && leaderStep === 'semester_sheets' ? leaderFilteredSheets : filteredSheets;
   const availableFilteredSheets = activeSheetsInView.filter(s => s.isAvailable !== false);
   const selectedSheetsInView = availableFilteredSheets.filter(s => selectedSheetIds.includes(s.id));
-  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + s.priceEstimate, 0);
+  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + (s.priceEstimate * getCopies(s.id)), 0);
 
   const isAllSelected = availableFilteredSheets.length > 0 && availableFilteredSheets.every(s => selectedSheetIds.includes(s.id));
 
@@ -183,13 +194,14 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
   const handlePrintSheet = (sheet: StudySheet) => {
     const hierarchy = buildSheetHierarchyPath(sheet);
+    const copies = getCopies(sheet.id);
     onSelectSheetForPrint({
       fileName: `${sheet.title}.pdf`,
       pageCount: sheet.pageCount || 40,
       color: sheet.recommendedColor,
       binding: sheet.recommendedBinding,
       sides: 'double',
-      copies: 1,
+      copies: copies,
       notes: `شيت من مكتبة الكلية الشاملة | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
     });
   };
@@ -202,13 +214,14 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
     const optionsList: Partial<PrintFileOptions>[] = selectedSheetsInView.map(sheet => {
       const hierarchy = buildSheetHierarchyPath(sheet);
+      const copies = getCopies(sheet.id);
       return {
         fileName: `${sheet.title}.pdf`,
         pageCount: sheet.pageCount || 40,
         color: sheet.recommendedColor,
         binding: sheet.recommendedBinding,
         sides: 'double',
-        copies: 1,
+        copies: copies,
         notes: `شيت من المكتبة الجامعية | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
       };
     });
@@ -869,22 +882,52 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5" onClick={e => e.stopPropagation()}>
                           <div>
                             <span className="text-[10px] text-slate-400 block">السعر:</span>
-                            <strong className="text-emerald-900 font-black text-sm sm:text-base">
-                              {formatSDG(sheet.priceEstimate)}
+                            <strong className="text-emerald-900 font-black text-xs sm:text-sm">
+                              {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
                             </strong>
                           </div>
 
-                          <button
-                            onClick={() => isAvailable && handlePrintSheet(sheet)}
-                            disabled={!isAvailable}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>اطبع</span>
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {isAvailable && (
+                              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                <button
+                                  type="button"
+                                  onClick={() => updateSheetCopies(sheet.id, -1)}
+                                  className="w-5 h-5 bg-white hover:bg-slate-200 text-slate-800 rounded font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                                  title="إنقاص عدد النسخ"
+                                >
+                                  -
+                                </button>
+                                <span className="w-5 text-center text-slate-900 font-black text-xs">
+                                  {getCopies(sheet.id)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateSheetCopies(sheet.id, 1)}
+                                  className="w-5 h-5 bg-emerald-800 hover:bg-emerald-900 text-amber-300 rounded font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                                  title="زيادة عدد النسخ"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+
+                            <button
+                              onClick={() => isAvailable && handlePrintSheet(sheet)}
+                              disabled={!isAvailable}
+                              className={`font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors ${
+                                isAvailable 
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
+                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>اطبع</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1195,32 +1238,59 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                     </div>
 
                     {/* Price & Action */}
-                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
                       <div>
                         <span className="text-[11px] text-slate-400 block">السعر:</span>
                         {isAvailable ? (
-                          <strong className="text-emerald-900 font-black text-base sm:text-lg">
-                            {formatSDG(sheet.priceEstimate)}
+                          <strong className="text-emerald-900 font-black text-sm sm:text-base">
+                            {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
                           </strong>
                         ) : (
-                          <strong className="text-rose-600 font-bold text-sm">
+                          <strong className="text-rose-600 font-bold text-xs">
                             غير متوفرة
                           </strong>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => isAvailable && handlePrintSheet(sheet)}
-                        disabled={!isAvailable}
-                        className={`font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm ${
-                          isAvailable 
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
-                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                        }`}
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>{isAvailable ? 'اطبع المادة فقط' : 'غير متوفرة'}</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {isAvailable && (
+                          <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-600 px-1 hidden sm:inline">النسخ:</span>
+                            <button
+                              type="button"
+                              onClick={() => updateSheetCopies(sheet.id, -1)}
+                              className="w-6 h-6 bg-white hover:bg-slate-200 text-slate-800 rounded-lg font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                              title="إنقاص عدد النسخ"
+                            >
+                              -
+                            </button>
+                            <span className="w-5 text-center text-slate-900 font-black text-xs">
+                              {getCopies(sheet.id)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateSheetCopies(sheet.id, 1)}
+                              className="w-6 h-6 bg-emerald-800 hover:bg-emerald-900 text-amber-300 rounded-lg font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                              title="زيادة عدد النسخ"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => isAvailable && handlePrintSheet(sheet)}
+                          disabled={!isAvailable}
+                          className={`font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-xs ${
+                            isAvailable 
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>{isAvailable ? 'اطبع المادة فقط' : 'غير متوفرة'}</span>
+                        </button>
+                      </div>
                     </div>
 
                   </div>
