@@ -194,9 +194,16 @@ export default function App() {
       const localRates = localStorage.getItem('a4_pricing_rates');
       if (localRates) {
         const parsed = JSON.parse(localRates);
-        if (parsed && parsed.bwPerPage) {
+        if (parsed && parsed.bwPerPage && parsed.bwPerPage >= 200) {
           setRates(parsed);
+        } else {
+          // Upgrade old rates (< 200) to new rate standards
+          const upgraded = { ...DEFAULT_PRICING_RATES, ...parsed, bwPerPage: Math.max(200, parsed?.bwPerPage || 200), colorPerPage: Math.max(500, parsed?.colorPerPage || 500) };
+          setRates(upgraded);
+          localStorage.setItem('a4_pricing_rates', JSON.stringify(upgraded));
         }
+      } else {
+        localStorage.setItem('a4_pricing_rates', JSON.stringify(DEFAULT_PRICING_RATES));
       }
     } catch (e) {
       console.error('Error loading pricing rates from localStorage', e);
@@ -206,9 +213,10 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data && data.bwPerPage) {
-          setRates(data);
+          const validRates = data.bwPerPage < 200 ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500 } : data;
+          setRates(validRates);
           try {
-            localStorage.setItem('a4_pricing_rates', JSON.stringify(data));
+            localStorage.setItem('a4_pricing_rates', JSON.stringify(validRates));
           } catch (e) {}
         }
       })
