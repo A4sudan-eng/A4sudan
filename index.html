@@ -30,13 +30,17 @@
         }
       });
 
-      if ('serviceWorker' in navigator) {
+      if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
         window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js').then(function(reg) {
-            reg.update();
-          }).catch(function(err) {
-            console.log('ServiceWorker registration failed: ', err);
-          });
+          try {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function(reg) {
+              if (reg && reg.update) {
+                reg.update().catch(function() {});
+              }
+            }).catch(function(err) {
+              // Silently handle iframe / sandbox restrictions
+            });
+          } catch (e) {}
         });
       }
     </script>
