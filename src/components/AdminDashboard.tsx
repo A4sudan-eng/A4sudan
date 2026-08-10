@@ -531,8 +531,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     if (isAuthenticated && onRefreshOrders) {
       onRefreshOrders();
+      const interval = setInterval(() => {
+        onRefreshOrders();
+      }, 3000);
+      return () => clearInterval(interval);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, onRefreshOrders]);
 
   // PIN Authentication Handler
   const handlePinSubmit = (e: React.FormEvent) => {

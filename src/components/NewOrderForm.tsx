@@ -443,10 +443,8 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
         onOrderCreated(newOrder);
       }
 
-      // 2. Fire-and-forget background cloud & server sync calls (non-blocking)
-      saveOrderToCloud(newOrder).catch(cloudErr => {
-        console.error('Cloud order save background attempt warning:', cloudErr);
-      });
+      // 2. Save directly to Firebase Cloud Firestore for instant cross-device cross-platform admin sync
+      await saveOrderToCloud(newOrder);
 
       fetch('/api/orders', {
         method: 'POST',

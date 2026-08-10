@@ -152,7 +152,7 @@ export default function App() {
               map.set(o.id, {
                 ...existing,
                 ...o,
-                files: (existing.files && existing.files.length > 0) ? existing.files : o.files,
+                files: (o.files && o.files.length > 0) ? o.files : existing.files,
                 bankakProofUrl: o.bankakProofUrl || existing.bankakProofUrl,
               });
             }
@@ -218,7 +218,7 @@ export default function App() {
 
     // Subscribe to real-time cloud orders from Firebase Firestore
     const unsubscribeCloud = subscribeToCloudOrders((cloudOrders) => {
-      if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+      if (Array.isArray(cloudOrders)) {
         setOrders(prev => {
           const map = new Map<string, PrintOrder>();
           // 1. Keep current state
@@ -231,8 +231,10 @@ export default function App() {
                 map.set(o.id, o);
               } else {
                 map.set(o.id, {
+                  ...existing,
                   ...o,
-                  files: (existing.files && existing.files.length > 0) ? existing.files : o.files,
+                  files: (o.files && o.files.length > 0) ? o.files : existing.files,
+                  bankakProofUrl: o.bankakProofUrl || existing.bankakProofUrl,
                 });
               }
             }

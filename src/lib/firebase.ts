@@ -55,28 +55,59 @@ export function subscribeToAuthState(callback: (user: User | null) => void): () 
 }
 
 /**
+ * Deep recursive cleanup function to ensure no `undefined`, functions, or non-serializable objects exist.
+ * Firestore setDoc strictly errors out if ANY field (even nested in arrays or objects) is `undefined`.
+ */
+function deepCleanForFirestore(val: any): any {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'function' || typeof val === 'symbol') return null;
+  if (typeof val !== 'object') return val;
+
+  // Omit DOM File / Blob instances
+  if (typeof File !== 'undefined' && val instanceof File) return null;
+  if (typeof Blob !== 'undefined' && val instanceof Blob) return null;
+
+  if (Array.isArray(val)) {
+    return val
+      .map(item => deepCleanForFirestore(item))
+      .filter(item => item !== null && item !== undefined);
+  }
+
+  const cleaned: Record<string, any> = {};
+  for (const key of Object.keys(val)) {
+    const child = deepCleanForFirestore(val[key]);
+    if (child !== undefined && child !== null) {
+      cleaned[key] = child;
+    }
+  }
+  return cleaned;
+}
+
+/**
  * Sanitizes an order object to ensure it stays well below Firestore's 1MB limit
+ * and never triggers undefined field errors.
  */
 function sanitizeOrderForFirestore(order: PrintOrder): any {
   if (!order) return {};
-  const clean: any = JSON.parse(JSON.stringify(order));
 
-  // Attach current authenticated user id if available
-  if (!clean.userId && auth.currentUser?.uid) {
-    clean.userId = auth.currentUser.uid;
+  const cleanOrder: any = { ...order };
+
+  // Attach current authenticated user id or email if available
+  if (!cleanOrder.userId && auth.currentUser?.uid) {
+    cleanOrder.userId = auth.currentUser.uid;
   }
-  if (!clean.customerEmail && auth.currentUser?.email) {
-    clean.customerEmail = auth.currentUser.email;
+  if (!cleanOrder.customerEmail && auth.currentUser?.email) {
+    cleanOrder.customerEmail = auth.currentUser.email;
   }
 
-  // Sanitize files array to remove DOM file references or large blob/data URLs
-  if (Array.isArray(clean.files)) {
-    clean.files = clean.files.map((file: any) => {
+  // Sanitize files array to remove DOM file references or massive blob/data URLs
+  if (Array.isArray(cleanOrder.files)) {
+    cleanOrder.files = cleanOrder.files.map((file: any) => {
       const copy = { ...file };
       delete copy.file; // Delete non-serializable DOM file object
       if (copy.previewUrl) {
-        // Strip blob: URLs or data: URLs larger than 25KB from file items to keep payload tiny
-        if (typeof copy.previewUrl === 'string' && (copy.previewUrl.startsWith('blob:') || copy.previewUrl.length > 25000)) {
+        // Strip blob: URLs or data: URLs larger than 50KB from individual file items to keep order payload small
+        if (typeof copy.previewUrl === 'string' && (copy.previewUrl.startsWith('blob:') || copy.previewUrl.length > 50000)) {
           delete copy.previewUrl;
         }
       }
@@ -84,22 +115,16 @@ function sanitizeOrderForFirestore(order: PrintOrder): any {
     });
   }
 
-  // Ensure bankakProofUrl doesn't exceed 250KB to avoid hitting Firestore document size limit
-  if (clean.bankakProofUrl && typeof clean.bankakProofUrl === 'string') {
-    if (clean.bankakProofUrl.length > 250000) {
-      console.warn('Bankak proof image too large for direct Firestore payload, storing order details');
-      delete clean.bankakProofUrl;
+  // Keep bankakProofUrl if under 400KB to ensure proof image persists in Firestore
+  if (cleanOrder.bankakProofUrl && typeof cleanOrder.bankakProofUrl === 'string') {
+    if (cleanOrder.bankakProofUrl.length > 400000) {
+      console.warn('Bankak proof image too large for direct Firestore payload, truncating proof image');
+      delete cleanOrder.bankakProofUrl;
     }
   }
 
-  // Explicitly strip any undefined properties
-  Object.keys(clean).forEach(key => {
-    if (clean[key] === undefined) {
-      delete clean[key];
-    }
-  });
-
-  return clean;
+  // Apply deep recursive cleaning to eliminate any nested undefined values
+  return deepCleanForFirestore(cleanOrder);
 }
 
 /**
