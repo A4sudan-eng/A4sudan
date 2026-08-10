@@ -96,8 +96,8 @@ export interface DeliveryZone {
 }
 
 export interface PricingRates {
-  bwPerPage: number; // e.g., 60 SDG
-  colorPerPage: number; // e.g., 200 SDG
+  bwPerPage: number; // e.g., 200 SDG per printed paper sheet
+  colorPerPage: number; // e.g., 500 SDG per printed paper sheet
   paperSizeMultiplier: Record<PaperSize, number>; // a4: 1, a3: 2.2, a5: 0.8
   sidesDiscountRatio: number; // e.g., 0.85 for double sided
   paperWeightPrice: Record<PaperWeight, number>; // 70g: 0, 80g: 20, etc.

@@ -125,9 +125,48 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
         )}
       </div>
 
-      {/* Grid of Layout Options */}
+      {/* Double Sided Printing Toggle Button Section */}
+      {interactive && onSelectSides && (
+        <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 space-y-2">
+          <label className="block text-xs font-black text-emerald-950 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+            <span>خيار الوجهين (طباعة على وجهين أم وجه واحد):</span>
+          </label>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={() => onSelectSides('double')}
+              className={`py-3 px-4 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer border-2 ${
+                sides === 'double'
+                  ? 'bg-emerald-800 text-amber-300 border-emerald-900 shadow-md ring-2 ring-emerald-600 scale-[1.01]'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'
+              }`}
+            >
+              <span className="text-base">📄🔄</span>
+              <span>طباعة على الوجهين (وجهين)</span>
+              {sides === 'double' && <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectSides('single')}
+              className={`py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer border-2 ${
+                sides === 'single'
+                  ? 'bg-emerald-800 text-amber-300 border-emerald-900 shadow-md ring-2 ring-emerald-600 scale-[1.01]'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'
+              }`}
+            >
+              <span className="text-base">📄</span>
+              <span>طباعة وجه واحد</span>
+              {sides === 'single' && <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Grid of Layout Options (Enlarged Buttons) */}
       {interactive && onSelectPagesPerSheet && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           {ppsOptions.map((opt) => {
             const isSelected = pagesPerSheet === opt.value;
             return (
@@ -135,37 +174,37 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
                 type="button"
                 key={opt.value}
                 onClick={() => onSelectPagesPerSheet(opt.value)}
-                className={`relative flex flex-col items-center justify-between p-2.5 rounded-xl border-2 transition-all text-right group ${
+                className={`relative flex flex-col items-center justify-between p-3.5 sm:p-4 rounded-2xl border-2 transition-all text-right group cursor-pointer ${
                   isSelected
-                    ? 'bg-emerald-50/90 border-emerald-600 shadow-sm ring-1 ring-emerald-600'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-100/50'
+                    ? 'bg-emerald-50 border-emerald-600 shadow-md ring-2 ring-emerald-600 scale-[1.01]'
+                    : 'bg-white border-slate-300 hover:border-emerald-400 hover:bg-slate-50'
                 }`}
               >
                 {/* Badge */}
-                <span className={`absolute -top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                <span className={`absolute -top-2.5 left-3 text-[10px] font-black px-2.5 py-0.5 rounded-full border shadow-xs ${
                   isSelected 
-                    ? 'bg-emerald-600 text-white border-emerald-700'
-                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                    ? 'bg-emerald-700 text-amber-300 border-emerald-800'
+                    : 'bg-slate-100 text-slate-700 border-slate-300'
                 }`}>
                   {opt.badge}
                 </span>
 
-                {/* Paper Illustration Container */}
-                <div className="w-full h-24 my-1.5 bg-white border border-slate-300 rounded-lg shadow-xs overflow-hidden flex items-center justify-center relative group-hover:scale-[1.02] transition-transform">
+                {/* Paper Illustration Container (Enlarged) */}
+                <div className="w-full h-32 sm:h-36 my-2 bg-white border-2 border-slate-300 rounded-xl shadow-sm overflow-hidden flex items-center justify-center relative group-hover:scale-[1.03] transition-transform">
                   {renderPaperLayout(opt.value)}
                   {isSelected && (
-                    <div className="absolute top-1 right-1 bg-emerald-600 text-white p-0.5 rounded-full shadow">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    <div className="absolute top-1.5 right-1.5 bg-emerald-700 text-white p-1 rounded-full shadow-md">
+                      <CheckCircle2 className="w-4 h-4 text-amber-300" />
                     </div>
                   )}
                 </div>
 
-                {/* Text Labels */}
-                <div className="w-full text-center">
-                  <span className={`block font-bold text-xs ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
+                {/* Text Labels (Enlarged text) */}
+                <div className="w-full text-center space-y-0.5">
+                  <span className={`block font-black text-sm sm:text-base ${isSelected ? 'text-emerald-950' : 'text-slate-900'}`}>
                     {opt.title}
                   </span>
-                  <span className="text-[10px] text-slate-500 block">{opt.subtitle}</span>
+                  <span className="text-xs text-slate-500 font-bold block">{opt.subtitle}</span>
                 </div>
               </button>
             );
@@ -173,20 +212,20 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
         </div>
       )}
 
-      {/* Visual Paper Live Mock Diagram */}
-      <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row items-center gap-4 justify-between">
-        <div className="flex items-center gap-3">
-          {/* Paper mock */}
+      {/* Visual Paper Live Mock Diagram (Enlarged Model Diagram) */}
+      <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-5 justify-between shadow-sm">
+        <div className="flex items-center gap-4">
+          {/* Paper mock (Enlarged) */}
           <div className="relative shrink-0">
             {/* Base Paper */}
-            <div className="w-24 h-32 bg-amber-50/20 border-2 border-slate-400 rounded-md shadow-md p-1 relative overflow-hidden bg-white">
+            <div className="w-32 h-44 sm:w-36 sm:h-48 bg-amber-50/20 border-2 border-slate-400 rounded-xl shadow-lg p-1.5 relative overflow-hidden bg-white">
               {renderPaperLayout(pagesPerSheet)}
             </div>
 
             {/* If Double Sided, show backing paper offset effect */}
             {sides === 'double' && (
-              <div className="absolute -bottom-1.5 -left-1.5 w-24 h-32 bg-slate-50 border border-slate-300 rounded-md -z-10 shadow-xs flex items-end justify-start p-1">
-                <span className="text-[8px] font-bold text-emerald-800 bg-emerald-100 px-1 rounded border border-emerald-300">
+              <div className="absolute -bottom-2 -left-2 w-32 h-44 sm:w-36 sm:h-48 bg-slate-100 border-2 border-emerald-400 rounded-xl -z-10 shadow-md flex items-end justify-start p-1.5">
+                <span className="text-[10px] font-black text-emerald-950 bg-emerald-200 px-2 py-0.5 rounded-md border border-emerald-400 shadow-xs">
                   وجه خفي 🔄
                 </span>
               </div>
@@ -194,19 +233,26 @@ export const SheetLayoutPreview: React.FC<SheetLayoutPreviewProps> = ({
           </div>
 
           {/* Description */}
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-xs text-slate-900">
-                الشكل النهائي للورقة المطبوعة:
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-black text-sm text-slate-900">
+                الشكل النموذجي للورقة المطبوعة:
               </span>
-              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
-                {pagesPerSheet} {pagesPerSheet === 1 ? 'صفحة' : 'صفحات'} في الورقة
+              <span className="text-xs font-black text-emerald-900 bg-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400 shadow-xs">
+                {pagesPerSheet} {pagesPerSheet === 1 ? 'صفحة' : 'صفحات'} بالورقة
               </span>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              تظهر كل ورقة مطبوعة مقسمة بوضوح إلى <strong>{pagesPerSheet}</strong> {pagesPerSheet === 1 ? 'صفحة' : 'صفحات'} بنفس ترتيب مستندك الأصلي.
+            <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-medium">
+              تظهر كل ورقة مطبوعة مقسمة بوضوح إلى <strong>{pagesPerSheet}</strong> {pagesPerSheet === 1 ? 'صفحة' : 'صفحات'} بنفس ترتيب مستندك الأصلي مع الوضوح التام.
             </p>
+
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 w-fit">
+              <span>نوع الطباعة الحالي:</span>
+              <span className="text-emerald-950 font-black">
+                {sides === 'double' ? 'وجهين 📄🔄 (مزدوج)' : 'وجه واحد 📄'}
+              </span>
+            </div>
           </div>
         </div>
 

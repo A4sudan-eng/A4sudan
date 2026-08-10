@@ -773,13 +773,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
     <div className="max-w-5xl mx-auto py-6 px-4">
       
       {/* Title Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight">
-          ارسل ملفاتك وطبعاتك اونلاين
+      <div className="text-center mb-6">
+        <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          {isLibraryOrder ? 'تفاصيل ومعاينة الشيتات المختارة للطباعة' : 'طباعة مستنداتك الخاصة'}
         </h1>
-        <p className="text-slate-600 text-sm sm:text-base mt-2 max-w-2xl mx-auto">
-          حدد مواصفات الطباعة، نوع الورق، التغليف، واستلم شيتاتك ومستنداتك مطبوعة بأعلى جودة مع التوصيل لجامعتك أو منزلك.
-        </p>
       </div>
 
       <form onSubmit={handleSubmitOrder} className="space-y-8">
@@ -803,15 +800,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 </div>
                 <div>
                   <h3 className="font-black text-sm sm:text-base text-emerald-950">
-                    طلب طباعة شيتات معتمدة من مكتبة الكلية ودليل الليدر
+                    الشيتات والمذكرات الدراسية المختارة من المكتبة
                   </h3>
                   <p className="text-xs text-emerald-800 mt-0.5">
-                    تم تحميل ملفات ومستندات المذكرات والشيتات المحددة تلقائياً من المكتبة دون الحاجة لرفع أية ملفات.
+                    تم تحميل الشيتات والمذكرات المحددة تلقائياً من المكتبة وتجهيز خيارات طباعتها.
                   </p>
                 </div>
               </div>
               <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs px-3 py-1.5 rounded-xl font-bold shrink-0">
-                ملفات معتمدة ومجهزة ✓
+                مجهزة للطباعة ✓
               </span>
             </div>
           ) : files.length === 0 && (

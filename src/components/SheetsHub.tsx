@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { 
   Search, Printer, BookOpen, GraduationCap, Plus, Filter, Building2, 
   Sparkles, Layers, CheckSquare, Square, Check, ChevronLeft, ArrowRight, 
-  UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft
+  UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft,
+  X, MessageCircle, FileUp, AlertCircle
 } from 'lucide-react';
 import { StudySheet, PrintFileOptions } from '../types';
 import { SAMPLE_STUDY_SHEETS } from '../data/initialData';
@@ -26,7 +27,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
   // Leader drill-down navigation steps:
   // 'universities' -> 'colleges' -> 'departments' -> 'degree_tracks' -> 'levels' -> 'semesters' -> 'semester_sheets'
-  const [leaderStep, setLeaderStep] = useState<'universities' | 'colleges' | 'departments' | 'degree_tracks' | 'levels' | 'semesters' | 'semester_sheets'>('levels');
+  const [leaderStep, setLeaderStep] = useState<'universities' | 'colleges' | 'departments' | 'degree_tracks' | 'levels' | 'semesters' | 'semester_sheets'>('universities');
 
   const [selectedUni, setSelectedUni] = useState<string>('جامعة النيلين');
   const [selectedCollege, setSelectedCollege] = useState<string>('كلية التجارة');
@@ -189,7 +190,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
       binding: sheet.recommendedBinding,
       sides: 'double',
       copies: 1,
-      notes: `شيت من مكتبة الكلية ودليل الليدر | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
+      notes: `شيت من مكتبة الكلية الشاملة | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
     });
   };
 
@@ -208,7 +209,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
         binding: sheet.recommendedBinding,
         sides: 'double',
         copies: 1,
-        notes: `شيت من دليل الليدر | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
+        notes: `شيت من المكتبة الجامعية | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
       };
     });
 
@@ -246,170 +247,18 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     setNewTitle('');
     setNewSubject('');
     setNewAuthor('');
-    alert('تمت إضافة الشيت إلى مكتبة الكلية ودليل الليدر بنجاح!');
+    alert('تمت إضافة الشيت إلى مكتبة الكلية بنجاح!');
   };
 
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
+    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
       
-      {/* Compact Top Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 text-white rounded-2xl px-5 py-3.5 mb-4 border border-emerald-700/60 shadow-md flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-800/90 rounded-xl flex items-center justify-center text-amber-300 font-bold border border-emerald-600 shrink-0">
-            <BookOpen className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
-              <span>مكتبة الجامعات السودانية</span>
-              <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-md">
-                الشيتات والمذكرات
-              </span>
-            </h1>
-            <p className="text-emerald-200/80 text-xs hidden sm:block">
-              تصفح الجامعات والكليات والأقسام والفصول الدراسية للوصول لكافة الشيتات المعتمدة
-            </p>
-          </div>
-        </div>
-
-        {/* Quick University Badge */}
-        <div className="hidden md:flex items-center gap-2 bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/60 text-xs shrink-0">
-          <img 
-            src={neelainLogo} 
-            alt="جامعة النيلين" 
-            className="w-6 h-6 object-contain rounded bg-white p-0.5"
-          />
-          <span className="font-bold text-emerald-100">جامعة النيلين • كلية التجارة</span>
-        </div>
-      </div>
-
       {/* ========================================================================= */}
       {/* LEADER SECTION (قسم الليدر والجامعات والفصول الدراسية)                   */}
       {/* ========================================================================= */}
       {activeMode === 'leader' && (
         <div className="space-y-5 mb-10">
           
-          {/* Prominent & Highly Visible Navigation / Breadcrumbs Bar */}
-          <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border-2 border-emerald-600/30 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800">
-              <span className="text-emerald-900 font-black flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                <Landmark className="w-4 h-4 text-emerald-700" />
-                <span>مسار الملاحة:</span>
-              </span>
-
-              {/* All Universities / Change University Button */}
-              <button 
-                onClick={() => setLeaderStep('universities')}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
-                  leaderStep === 'universities' 
-                    ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                    : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                }`}
-              >
-                <span>جميع الجامعات</span>
-              </button>
-
-              {leaderStep !== 'universities' && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('colleges')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'colleges' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {selectedUni}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'departments' || leaderStep === 'degree_tracks' || leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('departments')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'departments' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {selectedCollege}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'degree_tracks' || leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedLeaderDept && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('degree_tracks')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'degree_tracks' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    قسم {selectedLeaderDept}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedDegreeTrack && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('levels')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'levels' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    المستويات الأكاديمية
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedLevelNum && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('semesters')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'semesters' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`}
-                  </button>
-                </>
-              )}
-
-              {leaderStep === 'semester_sheets' && selectedSemesterNum && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <span className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl font-black shadow-xs">
-                    {getSemesterLabel(selectedSemesterNum)}
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Direct Button to Switch University */}
-            {leaderStep !== 'universities' && (
-              <button
-                onClick={() => setLeaderStep('universities')}
-                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-950 font-black text-xs px-3 py-1.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 border border-emerald-300 shrink-0"
-              >
-                <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-                <span>تغيير الجامعة</span>
-              </button>
-            )}
-          </div>
-
           {/* STEP 1: UNIVERSITIES LIST (الجامعات) */}
           {leaderStep === 'universities' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
@@ -1042,15 +891,22 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   })}
                 </div>
               ) : (
-                <div className="text-center py-8 px-4 bg-white rounded-2xl border border-slate-200 shadow-xs max-w-xl mx-auto">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-3 text-emerald-700">
-                    <BookOpen className="w-6 h-6 text-emerald-700" />
+                <div className="text-center py-10 px-6 bg-amber-50/40 rounded-3xl border-2 border-amber-200/80 shadow-sm max-w-xl mx-auto space-y-4">
+                  <div className="w-14 h-14 bg-amber-100 border border-amber-300 rounded-2xl flex items-center justify-center mx-auto text-amber-800 shadow-xs">
+                    <AlertCircle className="w-7 h-7 text-amber-700" />
                   </div>
-                  <h3 className="text-lg font-black text-slate-900 mb-1">
-                    {getSemesterLabel(selectedSemesterNum)} - كلية التجارة
-                  </h3>
-                  <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                    تم تجهيز هذا الفصل الدراسي لـ (<strong>قسم {selectedLeaderDept}</strong>). يمكنك إضافة الشيتات أو المذكرات لتجهيزها وطباعتها فوراً!
+
+                  <div>
+                    <span className="inline-block bg-amber-200/70 text-amber-950 font-black text-[11px] px-3 py-1 rounded-full mb-2 border border-amber-300">
+                      جامعة النيلين • كلية التجارة • قسم {selectedLeaderDept} • {getSemesterLabel(selectedSemesterNum)}
+                    </span>
+                    <h3 className="text-xl font-black text-slate-900">
+                      شيتات هذا التخصص غير متوفرة حالياً 📚
+                    </h3>
+                  </div>
+
+                  <p className="text-slate-700 text-xs sm:text-sm leading-relaxed max-w-md mx-auto">
+                    نود إعلامك بأن الشيتات والمذكرات الخاصة بـ (<strong>قسم {selectedLeaderDept} - {getSemesterLabel(selectedSemesterNum)}</strong>) غير متوفرة حالياً بالمكتبة. يمكنك مساعدتنا في توفيرها ورفعها ليستفيد منها الجميع!
                   </p>
 
                   <button
@@ -1060,10 +916,10 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                       setNewSemester(selectedSemesterNum || 1);
                       setShowUploadModal(true);
                     }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                    className="bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-black px-6 py-3 rounded-2xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md hover:scale-[1.02] active:scale-[0.98] cursor-pointer border border-emerald-900"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>إضافة أول شيت لـ {getSemesterLabel(selectedSemesterNum)}</span>
+                    <FileUp className="w-4 h-4 text-amber-300" />
+                    <span>مساعدتنا في توفير الشيتات 🤝</span>
                   </button>
                 </div>
               )}
@@ -1386,6 +1242,60 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
             </div>
           )}
         </>
+      )}
+
+      {/* Help Us Provide Sheets Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 relative animate-in fade-in zoom-in-95 duration-150">
+            {/* Close Button */}
+            <button 
+              onClick={() => setShowUploadModal(false)}
+              className="absolute top-4 left-4 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-3 mb-6">
+              <div className="w-14 h-14 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <FileUp className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900">
+                مساعدتنا في توفير الشيتات والمذكرات
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                شكراً لمبادرتك! يمكنك إرسال الشيتات أو المذكرات الخاصة بـ (<strong>قسم {selectedLeaderDept} - {getSemesterLabel(selectedSemesterNum)}</strong>) مباشرة لفريق المكتبة.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Option 1: Direct WhatsApp */}
+              <a
+                href={`https://wa.me/249119636365?text=${encodeURIComponent(`مرحباً إدارة مكتبة A4 Sudan، أود مساعدتكم في توفير شيتات ومذكرات (قسم ${selectedLeaderDept} - ${getSemesterLabel(selectedSemesterNum)} - كلية التجارة جامعة النيلين)`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all shadow-md cursor-pointer text-center"
+              >
+                <MessageCircle className="w-5 h-5 text-emerald-200 shrink-0" />
+                <span>إرسال الشيتات عبر واتساب المكتبة المباشر 📱</span>
+              </a>
+
+              {/* Option 2: Note */}
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-center">
+                <p className="text-[11px] text-slate-600 font-medium">
+                  سيتم مراجعة المذكرات والشيتات وفحصها وإضافتها فوراً لجميع زملائك بالجامعة.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer mt-2"
+              >
+                إغلاق النافذة
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
