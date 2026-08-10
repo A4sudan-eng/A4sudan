@@ -10,7 +10,7 @@ import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon } from './types';
 import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS } from './data/initialData';
-import { saveOrderToCloud, updateOrderInCloud, deleteOrderFromCloud, subscribeToCloudOrders, getOrdersFromCloud, subscribeToAuthState } from './lib/firebase';
+import { saveOrderToCloud, updateOrderInCloud, deleteOrderFromCloud, subscribeToCloudOrders, getOrdersFromCloud, subscribeToAuthState, processPendingCloudOrdersQueue } from './lib/firebase';
 import { User } from 'firebase/auth';
 
 export default function App() {
