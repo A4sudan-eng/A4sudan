@@ -41,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Logo & Brand Name */}
           <div 
-            onClick={() => setCurrentView('home')}
+            onClick={() => setCurrentView('sheets')}
             className="flex items-center gap-3 cursor-pointer group"
           >
             <img

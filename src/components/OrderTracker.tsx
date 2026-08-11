@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Search, Package, Clock, CheckCircle2, Truck, Phone, AlertCircle, FileText, Download, ExternalLink, Image as ImageIcon, X, Cloud, LogIn, User as UserIcon, Copy, Check } from 'lucide-react';
+import { Search, Package, Clock, CheckCircle2, Truck, Phone, AlertCircle, FileText, Download, ExternalLink, Image as ImageIcon, X, Cloud, LogIn, User as UserIcon, Copy, Check, Printer } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { PrintOrder } from '../types';
 import { getStatusBadgeInfo, formatSDG } from '../utils/pricing';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
+import { OrderSlipModal } from './OrderSlipModal';
 
 interface OrderTrackerProps {
   orders: PrintOrder[];
@@ -16,6 +17,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({ orders, onRefreshOrd
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProofImage, setSelectedProofImage] = useState<string | null>(null);
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
+  const [printOrderSlip, setPrintOrderSlip] = useState<PrintOrder | null>(null);
 
   const handleCopyOrderDetails = (order: PrintOrder) => {
     const badge = getStatusBadgeInfo(order.status);
@@ -330,25 +332,14 @@ ${filesList}
                             <FileText className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                             <span className="truncate font-medium text-slate-900">{f.fileName}</span>
                           </div>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-600 shrink-0">
-                            <span>{f.pageCount} صفحة</span>
-                            {f.pagesPerSheet && f.pagesPerSheet > 1 && (
-                              <span className="bg-emerald-100 text-emerald-950 font-bold px-1.5 py-0.5 rounded border border-emerald-300">
-                                {f.pagesPerSheet} في الورقة ({Math.ceil(f.pageCount / f.pagesPerSheet)} ورقة)
+                          <div className="flex items-center gap-2 text-[11px] text-slate-700 shrink-0 font-bold">
+                            <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-300 text-slate-900">
+                              عدد النسخ: <strong className="text-slate-950 font-black">{f.copies} عدد</strong>
+                            </span>
+                            {f.calculatedPrice && (
+                              <span className="bg-emerald-100 text-emerald-950 font-mono font-black px-2 py-0.5 rounded border border-emerald-300">
+                                {formatSDG(f.calculatedPrice)}
                               </span>
-                            )}
-                            <span className="font-mono text-slate-500">({f.copies} نسخة)</span>
-                            {f.previewUrl && (
-                              <a
-                                href={f.previewUrl}
-                                download={f.fileName}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="ml-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[10px] flex items-center gap-1 shadow-sm transition-colors"
-                              >
-                                <Download className="w-3 h-3" />
-                                <span>تحميل</span>
-                              </a>
                             )}
                           </div>
                         </li>
@@ -366,6 +357,16 @@ ${filesList}
                 </span>
 
                 <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setPrintOrderSlip(order)}
+                    className="bg-slate-900 hover:bg-slate-950 text-white font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer border border-slate-800"
+                    title="طباعة بوليصة وإيصال الطلب كـ PDF أو ورقة الملصق"
+                  >
+                    <Printer className="w-4 h-4 text-amber-300" />
+                    <span>طباعة / تنزيل PDF 🖨️</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleCopyOrderDetails(order)}
@@ -445,6 +446,12 @@ ${filesList}
           </div>
         </div>
       )}
+
+      {/* Order Slip / Invoice Modal */}
+      <OrderSlipModal
+        order={printOrderSlip}
+        onClose={() => setPrintOrderSlip(null)}
+      />
 
     </div>
   );

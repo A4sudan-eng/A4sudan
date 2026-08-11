@@ -651,11 +651,8 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
 
               {/* Printed Materials / Files Table */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 text-xs space-y-3">
-                <h4 className="font-black text-slate-900 text-sm flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span>📚 أسماء المواد والملفات المرفقة للطباعة ({createdOrder.files.length} مادة/ملف):</span>
-                  <span className="text-amber-800 font-bold bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
-                    إجمالي الورق المطبوع: {createdOrder.files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0)} ورقة
-                  </span>
+                <h4 className="font-black text-slate-900 text-sm border-b border-slate-100 pb-2">
+                  📚 أسماء المواد والملفات المرفقة للطباعة ({createdOrder.files.length} مادة/ملف):
                 </h4>
 
                 <div className="space-y-2">
@@ -669,14 +666,13 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                           <strong className="text-slate-900 font-black text-sm">{file.fileName}</strong>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 text-slate-600 font-medium text-[11px] pr-7">
-                          <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-800 font-bold">
-                            {file.pageCount} صفحة
+                        <div className="flex flex-wrap items-center gap-2 text-slate-700 font-bold text-[11px] pr-7">
+                          <span className="bg-slate-100 text-slate-900 px-2.5 py-0.5 rounded border border-slate-300">
+                            عدد النسخ: <strong className="text-slate-950 font-black">{file.copies} عدد</strong>
                           </span>
-                          <span>• نوع الطباعة: {file.color === 'color' ? 'ألوان 🎨' : file.color === 'mixed' ? 'غلاف ألوان والداخل أبيض وأسود' : 'أبيض وأسود 🖤'}</span>
-                          <span>• الوجهين: {file.sides === 'double' ? 'طباعة وجهين 📄' : 'وجه واحد'}</span>
-                          <span>• التغليف: {file.binding === 'spiral_plastic' ? 'سلك حلزوني' : file.binding === 'stapled' ? 'كبس وتدبيس' : file.binding === 'softcover' ? 'غلاف مجلد' : file.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف'}</span>
-                          <span>• النسخ: <strong className="text-slate-900 font-bold">{file.copies} عدد</strong></span>
+                          <span className="bg-emerald-100 text-emerald-950 px-2.5 py-0.5 rounded border border-emerald-300 font-mono font-black">
+                            السعر: {formatSDG(file.calculatedPrice)}
+                          </span>
                         </div>
 
                         {file.notes && (

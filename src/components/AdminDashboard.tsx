@@ -3,7 +3,7 @@ import {
   ShieldCheck, Package, DollarSign, Printer, CheckCircle2, 
   Clock, Edit3, Save, RefreshCw, Eye, FileText, Phone, MapPin, CreditCard, Filter,
   Lock, KeyRound, Search, Trash2, LogOut, AlertCircle, FileCheck, Camera, Image as ImageIcon, X, Download, FileSpreadsheet, ExternalLink,
-  BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User
+  BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle
 } from 'lucide-react';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -11,6 +11,8 @@ import fawryLogo from '../assets/images/fawry_logo_1786006099638.jpg';
 import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog } from '../types';
 import { getStatusBadgeInfo, formatSDG, calculateFilePrice } from '../utils/pricing';
 import { DEFAULT_PRICING_RATES } from '../data/initialData';
+import { NEELAIN_COLLEGES } from '../data/neelainData';
+import { OrderSlipModal } from './OrderSlipModal';
 
 interface AdminDashboardProps {
   orders: PrintOrder[];
@@ -51,6 +53,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   const [selectedProofImage, setSelectedProofImage] = useState<string | null>(null);
+  const [printOrderSlip, setPrintOrderSlip] = useState<PrintOrder | null>(null);
   const [selectedDocumentFile, setSelectedDocumentFile] = useState<{
     fileName: string;
     previewUrl: string;
@@ -106,11 +109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div class="meta">
             <div><strong>اسم الملف:</strong> ${f.fileName}</div>
-            <div><strong>عدد الصفحات:</strong> ${f.pageCount} صفحة</div>
             <div><strong>عدد النسخ:</strong> ${f.copies} نسخة</div>
-            <div><strong>نوع الطباعة:</strong> ${f.color === 'color' ? 'ألوان 🎨' : 'أبيض وأسود 🖤'} (${f.sides === 'double' ? 'وجهين' : 'وجه واحد'})</div>
-            <div><strong>نوع التغليف:</strong> ${f.binding}</div>
-            ${f.pagesPerSheet ? `<div><strong>تقسيم الصفحات:</strong> ${f.pagesPerSheet} صفحة في الورقة</div>` : ''}
             ${orderId ? `<div><strong>رقم الطلب المرجعي:</strong> ${orderId}</div>` : ''}
           </div>
           <div class="content">
@@ -318,8 +317,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Sheet Management Form & Filter States
   const [sheetTitle, setSheetTitle] = useState('');
   const [sheetInstitution, setSheetInstitution] = useState('جامعة النيلين');
-  const [sheetFaculty, setSheetFaculty] = useState('كلية التجارة');
-  const [sheetDept, setSheetDept] = useState<'محاسبة' | 'تأمين' | 'إدارة أعمال'>('محاسبة');
+  const [sheetFaculty, setSheetFaculty] = useState('كلية علوم الحاسوب وتقانة المعلومات');
+  const [sheetDept, setSheetDept] = useState<string>('علوم الحاسوب');
   const [sheetDegree, setSheetDegree] = useState<'bachelor' | 'diploma'>('bachelor');
   const [sheetBatch, setSheetBatch] = useState('batch_33_34');
   const [sheetSemester, setSheetSemester] = useState<number>(1);
@@ -1420,216 +1419,206 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               return (
                 <div 
                   key={order.id}
-                  className="bg-white rounded-2xl border-2 border-slate-200 shadow-sm p-5 sm:p-6 space-y-5 hover:border-emerald-300 transition-all"
+                  className="bg-white rounded-2xl border-2 border-slate-300 shadow-md p-5 space-y-4 hover:border-emerald-500 transition-all"
                 >
-                  {/* Top Order Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <strong className="font-mono text-xl font-black text-slate-900 bg-slate-100 px-3 py-1 rounded-xl border border-slate-300">
-                          كود الطلب: {order.id}
-                        </strong>
-                        <span className={`text-xs font-bold px-3.5 py-1.5 rounded-full border ${badge.bgClass} ${badge.textClass}`}>
-                          {badge.label}
-                        </span>
-                        <span className="text-xs text-slate-500 font-medium dir-ltr">
-                          {new Date(order.createdAt).toLocaleDateString('ar-SD')} {new Date(order.createdAt).toLocaleTimeString('ar-SD', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
+                  {/* Top Order Header Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b-2 border-slate-200">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <strong className="font-mono text-lg sm:text-xl font-black text-slate-900 bg-slate-100 px-3 py-1 rounded-xl border border-slate-300">
+                        كود الطلب: {order.id}
+                      </strong>
+                      <span className={`text-xs font-bold px-3.5 py-1.5 rounded-full border ${badge.bgClass} ${badge.textClass}`}>
+                        {badge.label}
+                      </span>
+                      <span className="text-xs text-slate-500 font-medium dir-ltr">
+                        {new Date(order.createdAt).toLocaleDateString('ar-SD')} {new Date(order.createdAt).toLocaleTimeString('ar-SD', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
 
-                    <div className="text-right bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-200">
-                      <span className="text-[11px] text-emerald-800 font-bold block">المبلغ النهائي المستحق:</span>
+                    <div className="text-right bg-emerald-100/80 px-4 py-1.5 rounded-xl border border-emerald-300">
+                      <span className="text-[11px] text-emerald-900 font-bold block">إجمالي المستحق:</span>
                       <strong className="text-xl font-black text-emerald-950">{formatSDG(order.totalAmount)}</strong>
                     </div>
                   </div>
 
-                  {/* 1. UNIFIED CLIENT & ACADEMIC DATA */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-3">
-                    <h4 className="font-black text-slate-900 text-sm flex items-center gap-2 border-b border-slate-200 pb-2">
-                      <UserCheck className="w-4 h-4 text-emerald-600" />
-                      <span>بيانات مقدم الطلب والمسار الأكاديمي الموحد:</span>
-                    </h4>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 bg-white p-3.5 rounded-lg border border-slate-200">
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">👤 اسم الطالب / العميل:</span>
-                        <strong className="text-slate-900 text-sm font-bold">{order.customerName}</strong>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">📞 رقم التواصل (واتساب):</span>
-                        <strong className="text-slate-900 text-sm font-mono dir-ltr">{order.customerPhone}</strong>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">🏛️ الجامعة / المؤسسة:</span>
-                        <strong className="text-slate-900 text-sm font-bold">{order.institution || 'جامعة النيلين'}</strong>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">🎓 الكلية / التخصص / الدفعة:</span>
-                        <strong className="text-slate-900 text-sm font-bold">{order.specialization || 'كلية التجارة (الدفعة 29)'}</strong>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">🚚 طريقة التسليم والمدينة:</span>
-                        <strong className="text-slate-900 font-bold">
-                          {order.deliveryMethod === 'pickup' ? 'استلام شخصي من المكتبة' : `توصيل إلى ${order.city}`}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-500 block font-bold mb-0.5">📍 العنوان التفصيلي / المجمع:</span>
-                        <strong className="text-slate-900 font-bold">{order.addressOrCampus}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 2. UNIFIED DOCUMENTS & SHEETS BLOCK (تفاصيل المستندات والشيتات في حتة واحدة) */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-                      <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-emerald-600" />
-                        <span>تفاصيل المستندات والشيتات المطلوبة للطباعة ({order.files.length} ملف/شيت):</span>
-                      </h4>
-                      <span className="text-amber-900 bg-amber-100 px-3 py-1 rounded-full font-bold border border-amber-300">
-                        إجمالي الورق المطبوع: {order.files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0)} ورقة
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {order.files.map((f, idx) => {
-                        const fileUrl = getDownloadableDocumentUrl(f, order.id);
-
-                        return (
-                          <div key={idx} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                  {idx + 1}
-                                </span>
-                                <strong className="text-slate-900 font-black text-sm">{f.fileName}</strong>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                {/* Open / Preview Button */}
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedDocumentFile({
-                                    fileName: f.fileName,
-                                    previewUrl: fileUrl,
-                                    fileType: f.fileType,
-                                    pageCount: f.pageCount,
-                                    notes: f.notes
-                                  })}
-                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>معاينة</span>
-                                </button>
-
-                                {/* Direct Download Button */}
-                                <a
-                                  href={fileUrl}
-                                  download={f.fileName}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>تحميل</span>
-                                </a>
-                              </div>
-                            </div>
-
-                            {/* Specifications Row */}
-                            <div className="flex flex-wrap items-center gap-2 text-slate-700 font-medium text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-100">
-                              <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-900 font-bold">
-                                {f.pageCount} صفحة
-                              </span>
-                              <span className="text-emerald-950 font-extrabold bg-emerald-100 px-2.5 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
-                                <span>{f.pagesPerSheet === 8 ? 'الاسلايت (8:1)' : f.pagesPerSheet === 4 ? 'الشائع ⭐ (4:1)' : 'العادي (2:1)'}</span>
-                                <span>•</span>
-                                <span>{Math.ceil(f.pageCount / (f.pagesPerSheet || 2))} ورقة مطبوعة</span>
-                                <span className="text-[10px] text-emerald-800 font-bold">({rates.bwPerPage || 200}ج/ورقة)</span>
-                              </span>
-                              <span>• النوع: {f.color === 'color' ? 'ألوان 🎨' : f.color === 'mixed' ? 'غلاف ألوان والداخل أسود' : 'أسود 🖤'}</span>
-                              <span>• الوجهين: {f.sides === 'double' ? 'طباعة وجهين 📄' : 'وجه واحد'}</span>
-                              <span>• التغليف: {f.binding === 'spiral_plastic' ? 'سلك حلزوني' : f.binding === 'stapled' ? 'كبس وتدبيس' : f.binding === 'softcover' ? 'غلاف مجلد' : f.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف'}</span>
-                              <span>• عدد النسخ: <strong className="text-slate-900 font-bold">{f.copies} عدد</strong></span>
-                              <span className="mr-auto font-mono text-emerald-900 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                {formatSDG(f.calculatedPrice)}
-                              </span>
-                            </div>
-
-                            {/* Sequence / Notes */}
-                            {f.notes && (
-                              <p className="text-[11px] text-emerald-950 bg-emerald-50/90 px-3 py-1.5 rounded-lg border border-emerald-200 font-medium">
-                                📌 <strong>المسار الأكاديمي والملاحظات:</strong> {f.notes}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 3. FINANCIAL BREAKDOWN & COUPON INFO */}
-                  <div className="bg-emerald-950/80 text-white p-4 rounded-xl text-xs space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-2 text-emerald-100">
-                      <span>إجمالي الطباعة الفرعي: <strong className="text-white font-mono">{formatSDG(order.subtotal)}</strong></span>
-                      <span>رسوم التوصيل: <strong className="text-white font-mono">{formatSDG(order.deliveryFee)}</strong></span>
-                      
-                      {/* Coupon Discount Info */}
-                      {order.discount > 0 ? (
-                        <span className="text-amber-300 font-black bg-amber-950/80 px-2.5 py-1 rounded border border-amber-500/50">
-                          🎟️ تم استخدام كود تخفيض ({order.couponCode || 'كوبون خاص'}): خصم -{formatSDG(order.discount)}
+                  {/* SINGLE UNIFIED RECTANGLE CONTAINER FOR ALL CLIENT, ACADEMIC, FILE & PAYMENT DATA */}
+                  <div className="bg-slate-50 rounded-xl border-2 border-slate-300 overflow-hidden divide-y divide-slate-300 text-xs">
+                    
+                    {/* Part A: Client, Phone & Delivery Info */}
+                    <div className="p-4 bg-white space-y-3">
+                      <h4 className="font-black text-slate-900 text-sm flex items-center justify-between border-b border-slate-200 pb-2">
+                        <span className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-emerald-700" />
+                          <span>بيانات العميل ومسار التسليم والتواصل:</span>
                         </span>
-                      ) : (
-                        <span className="text-emerald-300/70 text-[11px]">لم يتم استخدام كود تخفيض</span>
-                      )}
-
-                      <span className="text-sm font-black text-amber-300">الصافي النهائي: {formatSDG(order.totalAmount)}</span>
-                    </div>
-
-                    {/* Payment details inside financial box */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                      <div>
-                        <span>وسيلة الدفع المختارة: </span>
-                        <strong className="text-amber-300 font-bold">
-                          {order.paymentMethod === 'bankak' ? 'تحويل بنكك (Bankak)' : order.paymentMethod === 'okash' ? 'تحويل أوكاش (O-CASH)' : order.paymentMethod === 'fawry' ? 'تحويل فوري (Fawry)' : 'دفع نقدي'}
-                        </strong>
-                        {order.bankakTransactionId && (
-                          <span className="mr-3 text-white">
-                            | رقم الإشعار المرجعي: <strong className="font-mono text-emerald-200 bg-emerald-900 px-2 py-0.5 rounded border border-emerald-700">{order.bankakTransactionId}</strong>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded text-[11px] font-black ${
-                          order.paymentStatus === 'verified' ? 'bg-emerald-400 text-slate-950' : 'bg-amber-400 text-slate-950'
-                        }`}>
-                          {order.paymentStatus === 'verified' ? 'مؤكد الدفع ✅' : 'بانتظار تأكيد المالية ⏳'}
-                        </span>
-
-                        {order.bankakProofUrl && (
+                        <div className="flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
-                            onClick={() => setSelectedProofImage(order.bankakProofUrl!)}
-                            className="bg-emerald-800 hover:bg-emerald-700 text-white px-2.5 py-1 rounded border border-emerald-600 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                            onClick={() => setPrintOrderSlip(order)}
+                            className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black px-3 py-1 rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer border border-amber-300"
+                            title="طباعة بوليصة شحن واستلام الطلب لوضعها مع الشيتات بداخل الكيس"
                           >
-                            <ImageIcon className="w-3.5 h-3.5 text-amber-300" />
-                            <span>معاينة صورة الإشعار 🔍</span>
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>طباعة بوليصة / ملصق الكيس 🏷️</span>
                           </button>
-                        )}
+
+                          <a
+                            href={`https://wa.me/${(order.customerPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`السلام عليكم ${order.customerName}، بخصوص طلبية الشيتات كود (${order.id}) عبر A4 Sudan...`)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>تواصل واتساب مباشر</span>
+                          </a>
+                        </div>
+                      </h4>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">👤 اسم الطالب / العميل:</span>
+                          <strong className="text-slate-900 text-sm font-black">{order.customerName}</strong>
+                        </div>
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">📞 رقم الهاتف (واتساب):</span>
+                          <strong className="text-slate-900 text-sm font-mono font-black dir-ltr">{order.customerPhone}</strong>
+                        </div>
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">🏛️ الجامعة / المؤسسة:</span>
+                          <strong className="text-slate-900 text-xs sm:text-sm font-bold">{order.institution || 'جامعة النيلين'}</strong>
+                        </div>
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">🎓 الكلية / التخصص:</span>
+                          <strong className="text-slate-900 text-xs sm:text-sm font-bold">{order.specialization || 'كلية التجارة'}</strong>
+                        </div>
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">🚚 طريقة التسليم والمدينة:</span>
+                          <strong className="text-slate-900 font-bold">
+                            {order.deliveryMethod === 'pickup' ? 'استلام شخصي من المكتبة' : `توصيل إلى ${order.city}`}
+                          </strong>
+                        </div>
+
+                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-slate-500 block font-bold mb-0.5">📍 العنوان التفصيلي / المجمع:</span>
+                          <strong className="text-slate-900 font-bold">{order.addressOrCampus}</strong>
+                        </div>
+                      </div>
+
+                      {/* Unified Single Rectangle for Academic Path & Notes for the entire Order */}
+                      {(() => {
+                        const uniqueOrderNotes = Array.from(new Set(order.files.map(f => f.notes).filter(Boolean)));
+                        if (uniqueOrderNotes.length === 0) return null;
+
+                        return (
+                          <div className="mt-2 bg-emerald-50 px-3.5 py-2.5 rounded-lg border border-emerald-300 text-xs text-emerald-950 space-y-1">
+                            <div className="font-extrabold text-emerald-900 flex items-center gap-1.5">
+                              <span>📌</span>
+                              <span>المسار الأكاديمي والملاحظات الموحدة للطلب:</span>
+                            </div>
+                            <div className="font-medium text-[11px] sm:text-xs leading-relaxed">
+                              {uniqueOrderNotes.join(' || ')}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Part B: Files & Materials List */}
+                    <div className="p-4 bg-slate-50 space-y-3">
+                      <div className="border-b border-slate-200 pb-2">
+                        <h4 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                          <FileText className="w-4.5 h-4.5 text-emerald-700" />
+                          <span>قائمة المواد والشيتات المطلوب طباعتها ({order.files.length} مادة):</span>
+                        </h4>
+                      </div>
+
+                      <div className="divide-y divide-slate-200 border border-slate-200 rounded-lg overflow-hidden bg-white">
+                        {order.files.map((f, idx) => {
+                          return (
+                            <div key={idx} className="p-3 hover:bg-emerald-50/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              {/* File Title */}
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-emerald-800 text-amber-300 font-black text-[11px] flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <strong className="text-slate-900 font-black text-sm sm:text-base">{f.fileName}</strong>
+                              </div>
+
+                              {/* Simplified Specs: Copies & Price */}
+                              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                                <span className="text-slate-800 font-extrabold text-xs bg-slate-100 px-2.5 py-1 rounded border border-slate-300">
+                                  عدد النسخ: <strong className="text-slate-950 font-black">{f.copies} عدد</strong>
+                                </span>
+
+                                <span className="font-mono font-black text-emerald-950 text-xs sm:text-sm bg-emerald-100 px-2.5 py-1 rounded border border-emerald-300">
+                                  السعر: {formatSDG(f.calculatedPrice)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {/* Part C: Financial & Payment Info */}
+                    <div className="p-4 bg-emerald-950 text-white space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-800/80 pb-2 text-emerald-100">
+                        <span>إجمالي الطباعة الفرعي: <strong className="text-white font-mono">{formatSDG(order.subtotal)}</strong></span>
+                        <span>رسوم التوصيل: <strong className="text-white font-mono">{formatSDG(order.deliveryFee)}</strong></span>
+                        
+                        {order.discount > 0 ? (
+                          <span className="text-amber-300 font-black bg-amber-950/80 px-2.5 py-0.5 rounded border border-amber-500/50">
+                            🎟️ تم استخدام كود تخفيض ({order.couponCode || 'كوبون خاص'}): خصم -{formatSDG(order.discount)}
+                          </span>
+                        ) : (
+                          <span className="text-emerald-300/70 text-[11px]">لم يتم استخدام كود تخفيض</span>
+                        )}
+
+                        <span className="text-sm font-black text-amber-300">الصافي النهائي: {formatSDG(order.totalAmount)}</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+                        <div>
+                          <span>وسيلة الدفع المختارة: </span>
+                          <strong className="text-amber-300 font-bold">
+                            {order.paymentMethod === 'bankak' ? 'تحويل بنكك (Bankak)' : order.paymentMethod === 'okash' ? 'تحويل أوكاش (O-CASH)' : order.paymentMethod === 'fawry' ? 'تحويل فوري (Fawry)' : 'دفع نقدي'}
+                          </strong>
+                          {order.bankakTransactionId && (
+                            <span className="mr-3 text-white">
+                              | رقم الإشعار المرجعي: <strong className="font-mono text-emerald-200 bg-emerald-900 px-2 py-0.5 rounded border border-emerald-700">{order.bankakTransactionId}</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-1 rounded text-[11px] font-black ${
+                            order.paymentStatus === 'verified' ? 'bg-emerald-400 text-slate-950' : 'bg-amber-400 text-slate-950'
+                          }`}>
+                            {order.paymentStatus === 'verified' ? 'مؤكد الدفع ✅' : 'بانتظار تأكيد المالية ⏳'}
+                          </span>
+
+                          {order.bankakProofUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProofImage(order.bankakProofUrl!)}
+                              className="bg-emerald-800 hover:bg-emerald-700 text-white px-2.5 py-1 rounded border border-emerald-600 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                            >
+                              <ImageIcon className="w-3.5 h-3.5 text-amber-300" />
+                              <span>معاينة صورة الإشعار 🔍</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                   </div>
 
-                  {/* Actions Row: Status Change & Delete Button */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  {/* Bottom Actions Row: Status Change & Delete Button */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <div className="flex items-center gap-2 text-xs flex-wrap">
                       <span className="font-bold text-slate-700">تغيير حالة الطلب:</span>
                       <select
@@ -1757,25 +1746,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">الكلية *</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={sheetFaculty}
-                    onChange={e => setSheetFaculty(e.target.value)}
+                    onChange={e => {
+                      const newFac = e.target.value;
+                      setSheetFaculty(newFac);
+                      const col = NEELAIN_COLLEGES.find(c => c.name === newFac);
+                      if (col && col.departments[0]) {
+                        setSheetDept(col.departments[0].name);
+                      }
+                    }}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  />
+                  >
+                    {NEELAIN_COLLEGES.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">قسم الكلية *</label>
                   <select
                     value={sheetDept}
-                    onChange={e => setSheetDept(e.target.value as 'محاسبة' | 'تأمين' | 'إدارة أعمال')}
+                    onChange={e => setSheetDept(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                   >
-                    <option value="محاسبة">قسم المحاسبة</option>
-                    <option value="تأمين">قسم التأمين</option>
-                    <option value="إدارة أعمال">قسم إدارة الأعمال</option>
+                    {(NEELAIN_COLLEGES.find(c => c.name === sheetFaculty)?.departments || []).map(d => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2102,16 +2100,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-800 font-bold mb-1">القسم *</label>
-                  <select
+                  <label className="block text-slate-800 font-bold mb-1">القسم / التخصص *</label>
+                  <input
+                    type="text"
+                    required
                     value={editingSheet.department}
-                    onChange={e => setEditingSheet({ ...editingSheet, department: e.target.value as any })}
+                    onChange={e => setEditingSheet({ ...editingSheet, department: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 text-xs"
-                  >
-                    <option value="محاسبة">محاسبة</option>
-                    <option value="تأمين">تأمين</option>
-                    <option value="إدارة أعمال">إدارة أعمال</option>
-                  </select>
+                    placeholder="اسم القسم"
+                  />
                 </div>
 
                 <div>
@@ -2962,90 +2959,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Document Viewer Modal */}
-      {selectedDocumentFile && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-6 backdrop-blur-sm"
-          onClick={() => setSelectedDocumentFile(null)}
-        >
-          <div 
-            className="relative max-w-4xl w-full h-[90vh] bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex justify-between items-center px-4 py-3 bg-emerald-900 text-white border-b border-emerald-800">
-              <div className="flex items-center gap-2.5 truncate">
-                <FileText className="w-5 h-5 text-emerald-300 shrink-0" />
-                <div className="truncate">
-                  <h4 className="font-bold text-sm truncate">{selectedDocumentFile.fileName}</h4>
-                  <span className="text-[11px] text-emerald-200 block">
-                    {selectedDocumentFile.pageCount ? `${selectedDocumentFile.pageCount} صفحة` : 'مستند الطباعة المرفق'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={selectedDocumentFile.previewUrl}
-                  download={selectedDocumentFile.fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 shadow transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>تحميل الملف للجهاز</span>
-                </a>
-
-                <button 
-                  type="button"
-                  onClick={() => setSelectedDocumentFile(null)}
-                  className="p-1.5 rounded-full hover:bg-emerald-800 text-emerald-200 hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body / Viewer */}
-            <div className="flex-1 bg-slate-100 p-2 sm:p-4 overflow-auto flex items-center justify-center">
-              {selectedDocumentFile.previewUrl?.startsWith('data:image/') || selectedDocumentFile.fileType?.startsWith('image/') ? (
-                <img 
-                  src={selectedDocumentFile.previewUrl} 
-                  alt={selectedDocumentFile.fileName} 
-                  className="max-w-full max-h-full object-contain rounded-lg shadow border border-slate-300"
-                />
-              ) : (
-                <iframe 
-                  src={selectedDocumentFile.previewUrl} 
-                  title={selectedDocumentFile.fileName} 
-                  className="w-full h-full rounded-xl border border-slate-300 bg-white shadow"
-                />
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="text-slate-600 font-medium">
-                {selectedDocumentFile.notes ? `ملاحظات: ${selectedDocumentFile.notes}` : 'معاينة المستند جاهزة للطباعة'}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedDocumentFile.previewUrl) {
-                    const win = window.open(selectedDocumentFile.previewUrl, '_blank');
-                    win?.focus();
-                  }
-                }}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors flex items-center gap-1.5"
-              >
-                <Printer className="w-4 h-4" />
-                <span>فتح في نافذة مستقلة للطباعة 🖨️</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Order Slip Printable Modal */}
+      <OrderSlipModal 
+        order={printOrderSlip} 
+        onClose={() => setPrintOrderSlip(null)} 
+      />
 
     </div>
   );
 };
+

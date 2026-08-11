@@ -20,7 +20,7 @@ import {
   User 
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
-import { PrintOrder } from '../types';
+import { PrintOrder, StudySheet } from '../types';
 
 // إعدادات Firebase المباشرة لمشروعك a4-sudan
 const firebaseConfig = {
@@ -384,4 +384,80 @@ export function subscribeToCloudOrders(callback: (orders: PrintOrder[]) => void)
     return () => {};
   }
 }
+
+/**
+ * Study Sheets Firestore Integration
+ */
+const SHEETS_COLLECTION = 'study_sheets';
+
+export async function saveSheetToCloud(sheet: StudySheet): Promise<boolean> {
+  try {
+    if (!sheet || !sheet.id) return false;
+    const cleanSheet = deepCleanForFirestore(sheet);
+    const docRef = doc(db, SHEETS_COLLECTION, sheet.id);
+    await setDoc(docRef, { ...cleanSheet, updatedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Firestore save sheet error:', error);
+    return false;
+  }
+}
+
+export async function deleteSheetFromCloud(sheetId: string): Promise<boolean> {
+  try {
+    if (!sheetId) return false;
+    const docRef = doc(db, SHEETS_COLLECTION, sheetId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.warn('Firestore delete sheet warning:', error);
+    return false;
+  }
+}
+
+export async function getSheetsFromCloud(): Promise<StudySheet[]> {
+  try {
+    const sheetsRef = collection(db, SHEETS_COLLECTION);
+    const snapshot = await getDocs(sheetsRef);
+    const sheetsList: StudySheet[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data && data.id) {
+        sheetsList.push(data as StudySheet);
+      }
+    });
+    return sheetsList;
+  } catch (error) {
+    console.warn('Error fetching sheets from cloud:', error);
+    return [];
+  }
+}
+
+export function subscribeToCloudSheets(callback: (sheets: StudySheet[]) => void): () => void {
+  try {
+    const sheetsRef = collection(db, SHEETS_COLLECTION);
+    const q = query(sheetsRef);
+    
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const sheetsList: StudySheet[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.id) {
+            sheetsList.push(data as StudySheet);
+          }
+        });
+        callback(sheetsList);
+      },
+      (error) => {
+        console.warn('Firestore sheets listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore sheets subscribe warning:', error);
+    return () => {};
+  }
+}
+
 

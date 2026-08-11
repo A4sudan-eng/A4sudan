@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
 import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS } from './src/data/initialData.js';
-import { PrintOrder, PricingRates } from './src/types.js';
+import { PrintOrder, PricingRates, StudySheet } from './src/types.js';
 
 async function startServer() {
   const app = express();
@@ -27,6 +27,7 @@ async function startServer() {
 
   // Persistent File Storage Helper for Orders
   const ORDERS_FILE_PATH = path.join(process.cwd(), 'a4_orders_store.json');
+  const SHEETS_FILE_PATH = path.join(process.cwd(), 'a4_sheets_store.json');
 
   function loadOrdersFromStore(): PrintOrder[] {
     try {
@@ -51,9 +52,33 @@ async function startServer() {
     }
   }
 
+  function loadSheetsFromStore(): StudySheet[] {
+    try {
+      if (fs.existsSync(SHEETS_FILE_PATH)) {
+        const raw = fs.readFileSync(SHEETS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent sheets file:', err);
+    }
+    return [...SAMPLE_STUDY_SHEETS];
+  }
+
+  function saveSheetsToStore(list: StudySheet[]) {
+    try {
+      fs.writeFileSync(SHEETS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent sheets file:', err);
+    }
+  }
+
   // In-memory persistent state initialized from disk
   let currentRates: PricingRates = { ...DEFAULT_PRICING_RATES };
   let ordersList: PrintOrder[] = loadOrdersFromStore();
+  let sheetsList: StudySheet[] = loadSheetsFromStore();
 
   // Initialize Gemini AI Client
   const apiKey = process.env.GEMINI_API_KEY;
@@ -228,7 +253,44 @@ async function startServer() {
 
   // Study Sheets API
   app.get('/api/sheets', (req, res) => {
-    res.json(SAMPLE_STUDY_SHEETS);
+    res.json(sheetsList);
+  });
+
+  app.post('/api/sheets', (req, res) => {
+    const newSheet: StudySheet = req.body;
+    if (!newSheet || !newSheet.id) {
+      return res.status(400).json({ error: 'Missing sheet or sheet id' });
+    }
+    const idx = sheetsList.findIndex(s => s.id === newSheet.id);
+    if (idx >= 0) {
+      sheetsList[idx] = newSheet;
+    } else {
+      sheetsList.unshift(newSheet);
+    }
+    saveSheetsToStore(sheetsList);
+    res.json({ success: true, sheet: newSheet, total: sheetsList.length });
+  });
+
+  app.delete('/api/sheets/:id', (req, res) => {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Missing sheet id' });
+    }
+    sheetsList = sheetsList.filter(s => s.id !== id);
+    saveSheetsToStore(sheetsList);
+    res.json({ success: true, total: sheetsList.length });
+  });
+
+  app.post('/api/sheets/batch-sync', (req, res) => {
+    const { sheets } = req.body;
+    if (Array.isArray(sheets) && sheets.length > 0) {
+      const map = new Map<string, StudySheet>();
+      sheetsList.forEach(s => { if (s && s.id) map.set(s.id, s); });
+      sheets.forEach((s: StudySheet) => { if (s && s.id) map.set(s.id, s); });
+      sheetsList = Array.from(map.values());
+      saveSheetsToStore(sheetsList);
+    }
+    res.json({ success: true, total: sheetsList.length, sheets: sheetsList });
   });
 
   // --- GOOGLE SHEETS INTEGRATION ROUTES ---

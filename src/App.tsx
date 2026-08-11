@@ -10,11 +10,23 @@ import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon } from './types';
 import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS } from './data/initialData';
-import { saveOrderToCloud, updateOrderInCloud, deleteOrderFromCloud, subscribeToCloudOrders, getOrdersFromCloud, subscribeToAuthState, processPendingCloudOrdersQueue } from './lib/firebase';
+import { 
+  saveOrderToCloud, 
+  updateOrderInCloud, 
+  deleteOrderFromCloud, 
+  subscribeToCloudOrders, 
+  getOrdersFromCloud, 
+  subscribeToAuthState, 
+  processPendingCloudOrdersQueue,
+  saveSheetToCloud,
+  deleteSheetFromCloud,
+  getSheetsFromCloud,
+  subscribeToCloudSheets
+} from './lib/firebase';
 import { User } from 'firebase/auth';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'home' | 'order' | 'sheets' | 'track' | 'admin'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'order' | 'sheets' | 'track' | 'admin'>('sheets');
   const [rates, setRates] = useState<PricingRates>(DEFAULT_PRICING_RATES);
   const [orders, setOrders] = useState<PrintOrder[]>(INITIAL_ORDERS);
   const [sheets, setSheets] = useState<StudySheet[]>(() => {
@@ -173,6 +185,61 @@ export default function App() {
     }
   };
 
+  // Fetch initial study sheets from Cloud Firestore, localStorage and backend
+  const fetchSheets = async () => {
+    try {
+      let localSheets: StudySheet[] = [];
+      try {
+        const raw = localStorage.getItem('a4_sheets');
+        if (raw) localSheets = JSON.parse(raw);
+      } catch (e) {}
+
+      // Fetch simultaneously from Cloud Firestore and Backend API
+      const [cloudRes, serverRes] = await Promise.allSettled([
+        getSheetsFromCloud(),
+        fetch('/api/sheets').then(res => res.ok ? res.json() : [])
+      ]);
+
+      const cloudSheets: StudySheet[] = cloudRes.status === 'fulfilled' && Array.isArray(cloudRes.value) ? cloudRes.value : [];
+      const serverSheets: StudySheet[] = serverRes.status === 'fulfilled' && Array.isArray(serverRes.value) ? serverRes.value : [];
+
+      setSheets(prev => {
+        const map = new Map<string, StudySheet>();
+
+        // 1. Populate from SAMPLE_STUDY_SHEETS
+        SAMPLE_STUDY_SHEETS.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+        // 2. Populate/merge from prev state
+        prev.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+        // 3. Populate/merge from localSheets
+        localSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+        // 4. Populate/merge from serverSheets
+        serverSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+        // 5. Populate/merge from cloudSheets (Cloud Firestore - HIGHEST PRIORITY SOURCE OF TRUTH)
+        cloudSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+        const merged = Array.from(map.values());
+        try {
+          localStorage.setItem('a4_sheets', JSON.stringify(merged));
+        } catch (err) {}
+
+        // If cloud Firestore has no sheets yet, seed initial sheets to cloud
+        if (cloudSheets.length === 0 && merged.length > 0) {
+          merged.forEach(sheet => {
+            saveSheetToCloud(sheet).catch(() => {});
+          });
+        }
+
+        return merged;
+      });
+    } catch (e) {
+      console.error('Error fetching sheets:', e);
+    }
+  };
+
   useEffect(() => {
     try {
       const localOrders = localStorage.getItem('a4_orders');
@@ -223,9 +290,10 @@ export default function App() {
       .catch(() => {});
 
     fetchOrders();
+    fetchSheets();
 
     // Subscribe to real-time cloud orders from Firebase Firestore
-    const unsubscribeCloud = subscribeToCloudOrders((cloudOrders) => {
+    const unsubscribeCloudOrders = subscribeToCloudOrders((cloudOrders) => {
       if (Array.isArray(cloudOrders)) {
         setOrders(prev => {
           const map = new Map<string, PrintOrder>();
@@ -257,6 +325,16 @@ export default function App() {
       }
     });
 
+    // Subscribe to real-time study sheets from Firebase Firestore
+    const unsubscribeCloudSheets = subscribeToCloudSheets((cloudSheets) => {
+      if (Array.isArray(cloudSheets) && cloudSheets.length > 0) {
+        setSheets(cloudSheets);
+        try {
+          localStorage.setItem('a4_sheets', JSON.stringify(cloudSheets));
+        } catch (e) {}
+      }
+    });
+
     // Auto-open APK download modal if link includes ?download_apk=true or ?apk=1 or hash #download-apk
     if (
       window.location.search.includes('download_apk') ||
@@ -267,16 +345,19 @@ export default function App() {
     }
 
     return () => {
-      if (unsubscribeCloud) unsubscribeCloud();
+      if (unsubscribeCloudOrders) unsubscribeCloudOrders();
+      if (unsubscribeCloudSheets) unsubscribeCloudSheets();
     };
   }, []);
 
-  // Auto refresh orders periodically every 3 seconds to instantly catch new client orders
+  // Auto refresh orders and sheets periodically every 3 seconds to instantly catch new client orders & sheets
   useEffect(() => {
     fetchOrders();
+    fetchSheets();
 
     const interval = setInterval(() => {
       fetchOrders();
+      fetchSheets();
     }, 3000);
 
     return () => clearInterval(interval);
@@ -369,10 +450,20 @@ export default function App() {
 
   const handleAddSheet = (newSheet: StudySheet) => {
     setSheets(prev => {
-      const updated = [newSheet, ...prev];
+      const updated = [newSheet, ...prev.filter(s => s.id !== newSheet.id)];
       try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
+
+    // Save to Firebase Cloud Firestore for instant cross-device client sync
+    saveSheetToCloud(newSheet).catch(() => {});
+
+    // POST to backend API
+    fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSheet),
+    }).catch(() => {});
   };
 
   const handleUpdateSheet = (updatedSheet: StudySheet) => {
@@ -381,6 +472,16 @@ export default function App() {
       try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
+
+    // Save to Firebase Cloud Firestore for instant cross-device client sync
+    saveSheetToCloud(updatedSheet).catch(() => {});
+
+    // POST to backend API
+    fetch('/api/sheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedSheet),
+    }).catch(() => {});
   };
 
   const handleDeleteSheet = (sheetId: string) => {
@@ -389,6 +490,14 @@ export default function App() {
       try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
+
+    // Delete from Firebase Cloud Firestore
+    deleteSheetFromCloud(sheetId).catch(() => {});
+
+    // Sync with backend API
+    fetch(`/api/sheets/${sheetId}`, {
+      method: 'DELETE',
+    }).catch(() => {});
   };
 
   const handleAddCoupon = (newCoupon: Coupon) => {
