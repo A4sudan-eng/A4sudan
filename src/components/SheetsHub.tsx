@@ -860,7 +860,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   </div>
 
                   <p className="text-emerald-100/90 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto">
-                    ساعد <strong className="text-amber-300 font-black">A4 Sudan</strong> في توفير شيتات هذا الفصل واحصل على <strong className="text-amber-300 font-bold">300 ورقة مطبوعة</strong>!
+                    ساعد <strong className="text-amber-300 font-black">A4 Sudan</strong> في توفير شيتات هذا الفصل واحصل على <strong className="text-amber-300 font-bold">300 ورقة مطبوعة هدية 🎁</strong>!
                   </p>
 
                   <div className="flex justify-center pt-2">
@@ -872,7 +872,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                       className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-8 py-3.5 rounded-2xl text-sm inline-flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-amber-400/25 cursor-pointer text-center hover:scale-[1.02] active:scale-[0.98]"
                     >
                       <MessageCircle className="w-5 h-5 text-slate-950" />
-                      <span>ساعد A4 Sudan واحصل على 300 ورقة مطبوعة 📱</span>
+                      <span>ساعد A4 Sudan واحصل على 300 ورقة مطبوعة هدية 🎁</span>
                     </a>
                   </div>
 
