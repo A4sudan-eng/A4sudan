@@ -11,6 +11,7 @@ export interface UniversityCollege {
   badge?: string;
   isTopBuyer?: boolean;
   levelsCount: number; // 4 or 5 levels for Bachelor
+  degreeType?: 'bachelor' | 'diploma' | 'both';
   departments: CollegeDepartment[];
 }
 
@@ -452,3 +453,27 @@ export const ACADEMIC_LEVELS = [
     ],
   },
 ];
+
+export const getStoredUniversities = (): UniversityInfo[] => {
+  try {
+    const raw = localStorage.getItem('a4_universities_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored universities:', e);
+  }
+  return SUDAN_UNIVERSITIES;
+};
+
+export const saveStoredUniversities = (unis: UniversityInfo[]): void => {
+  try {
+    localStorage.setItem('a4_universities_data', JSON.stringify(unis));
+    window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: unis }));
+  } catch (e) {
+    console.error('Error saving stored universities:', e);
+  }
+};

@@ -127,10 +127,22 @@ export interface AIAnalysisResponse {
   printQualityAdvice: string;
 }
 
+export interface Expense {
+  id: string;
+  title: string; // البيان/الوصف
+  category: 'raw_materials' | 'maintenance' | 'operations' | 'salaries' | 'delivery_costs' | 'other';
+  amount: number; // المبلغ بالجنيه
+  date: string; // YYYY-MM-DD
+  paymentMethod: 'cash' | 'bankak' | 'okash' | 'other';
+  paidTo?: string; // المستلم / الجهة
+  notes?: string;
+  createdAt: string;
+}
+
 export interface ActivityLog {
   id: string;
   adminName: string;
-  actionType: 'status_change' | 'payment_verified' | 'order_edit' | 'order_deleted' | 'coupon_added' | 'coupon_deleted' | 'pricing_updated' | 'sheet_added';
+  actionType: 'status_change' | 'payment_verified' | 'order_edit' | 'order_deleted' | 'coupon_added' | 'coupon_deleted' | 'pricing_updated' | 'sheet_added' | 'expense_added' | 'expense_deleted';
   orderId?: string;
   customerName?: string;
   details: string;

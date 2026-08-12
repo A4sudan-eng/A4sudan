@@ -529,7 +529,31 @@ export default function App() {
     setCurrentView('order');
   };
 
-  const activeOrderCount = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').length;
+  const getMyOrderIds = (): string[] => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('a4_my_order_ids') || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const myOrderIds = getMyOrderIds();
+  const myPhone = (localStorage.getItem('a4_my_phone') || '').trim();
+
+  const clientActiveOrders = orders.filter(o => {
+    if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
+    const isAccountOrder = Boolean(currentUser) && (
+      (Boolean(o.userId) && o.userId === currentUser?.uid) ||
+      (Boolean(o.customerEmail) && Boolean(currentUser?.email) && o.customerEmail?.toLowerCase() === currentUser?.email?.toLowerCase())
+    );
+    const isOwn = isAccountOrder || 
+      (myOrderIds.length > 0 && myOrderIds.includes(o.id)) ||
+      (Boolean(myPhone) && o.customerPhone && o.customerPhone.trim() === myPhone);
+    return isOwn;
+  });
+
+  const activeOrderCount = clientActiveOrders.length;
 
   return (
     <div className="min-h-screen bg-emerald-50/20 text-slate-900 font-sans flex flex-col justify-between dir-rtl text-right">

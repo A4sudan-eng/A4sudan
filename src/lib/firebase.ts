@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getFirestore, 
+  getFirestore,
+  initializeFirestore,
   collection, 
   doc, 
   setDoc, 
@@ -33,7 +34,16 @@ const firebaseConfig = {
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app);
+
+let firestoreInstance;
+try {
+  firestoreInstance = initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  });
+} catch (e) {
+  firestoreInstance = getFirestore(app);
+}
+export const db = firestoreInstance;
 export const auth = getAuth(app);
 
 const ORDERS_COLLECTION = 'orders';

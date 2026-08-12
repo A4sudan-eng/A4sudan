@@ -11,6 +11,7 @@ import { countPdfPages } from '../utils/pdfCounter';
 import { DELIVERY_ZONES } from '../data/initialData';
 import { saveOrderToCloud, auth } from '../lib/firebase';
 import { DeliveryRatesGuide } from './DeliveryRatesGuide';
+import { SUDAN_UNIVERSITIES } from '../data/neelainData';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -964,24 +965,70 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               </label>
               <input
                 type="text"
+                list="sudan-universities-datalist"
                 value={institution}
                 onChange={e => setInstitution(e.target.value)}
-                placeholder="مثال: جامعة النيلين، جامعة الخرطوم..."
+                placeholder="اختر أو اكتب اسم جامعتك..."
                 className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm"
               />
+              <datalist id="sudan-universities-datalist">
+                {SUDAN_UNIVERSITIES.map(u => (
+                  <option key={u.id} value={u.name} />
+                ))}
+                <option value="جامعة الخرطوم" />
+                <option value="جامعة الجزيرة" />
+                <option value="جامعة أزهري" />
+              </datalist>
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
-                التخصص / الكلية / الدفعة (اختياري)
+                التخصص / الكلية (اختياري)
               </label>
               <input
                 type="text"
                 value={specialization}
                 onChange={e => setSpecialization(e.target.value)}
-                placeholder="مثال: طب وجراحة - الدفعة 29، أو كلية التجارة..."
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm"
+                placeholder="مثال: كلية التجارة، بكالوريوس محاسبة، دبلوم حاسوب..."
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm mb-2"
               />
+              {/* Degree track quick selector pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-500">اختر نوع المؤهل:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('بكالوريوس')) {
+                      setSpecialization(prev => prev ? `بكالوريوس ${prev}` : 'بكالوريوس ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  🎓 بكالوريوس
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('دبلوم')) {
+                      setSpecialization(prev => prev ? `دبلوم ${prev}` : 'دبلوم تقني ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100 transition-colors cursor-pointer"
+                >
+                  📜 دبلوم تقني
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('دراسات عليا')) {
+                      setSpecialization(prev => prev ? `ماجستير/دراسات عليا ${prev}` : 'ماجستير/دراسات عليا ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100 transition-colors cursor-pointer"
+                >
+                  🎓 ماجستير
+                </button>
+              </div>
             </div>
           </div>
 

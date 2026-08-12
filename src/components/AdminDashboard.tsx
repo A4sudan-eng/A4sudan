@@ -3,15 +3,24 @@ import {
   ShieldCheck, Package, DollarSign, Printer, CheckCircle2, 
   Clock, Edit3, Save, RefreshCw, Eye, FileText, Phone, MapPin, CreditCard, Filter,
   Lock, KeyRound, Search, Trash2, LogOut, AlertCircle, FileCheck, Camera, Image as ImageIcon, X, Download, FileSpreadsheet, ExternalLink,
-  BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle
+  BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle, FolderTree,
+  ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle
 } from 'lucide-react';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
 import fawryLogo from '../assets/images/fawry_logo_1786006099638.jpg';
-import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog } from '../types';
+import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog, Expense } from '../types';
 import { getStatusBadgeInfo, formatSDG, calculateFilePrice } from '../utils/pricing';
-import { DEFAULT_PRICING_RATES } from '../data/initialData';
-import { NEELAIN_COLLEGES } from '../data/neelainData';
+import { DEFAULT_PRICING_RATES, getStoredExpenses, saveStoredExpenses } from '../data/initialData';
+import { 
+  NEELAIN_COLLEGES, 
+  SUDAN_UNIVERSITIES, 
+  UniversityInfo, 
+  UniversityCollege, 
+  CollegeDepartment, 
+  getStoredUniversities, 
+  saveStoredUniversities 
+} from '../data/neelainData';
 import { OrderSlipModal } from './OrderSlipModal';
 
 interface AdminDashboardProps {
@@ -125,12 +134,351 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Dashboard Tab & Filter States
-  const [activeTab, setActiveTab] = useState<'orders' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'financials' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs' | 'universities'>('orders');
+  const [financialSubTab, setFinancialSubTab] = useState<'sales' | 'expenses' | 'profit_loss'>('sales');
+  const [showFinancialsMenu, setShowFinancialsMenu] = useState(false);
+  const [showSheetsUniMenu, setShowSheetsUniMenu] = useState(false);
+  const [showQuickOrdersModal, setShowQuickOrdersModal] = useState(false);
+  const [quickSearchTerm, setQuickSearchTerm] = useState('');
+
+  const handlePrintQuickOrders = () => {
+    const filtered = orders.filter(ord => {
+      if (!quickSearchTerm.trim()) return true;
+      const q = quickSearchTerm.toLowerCase();
+      return (
+        ord.id.toLowerCase().includes(q) ||
+        ord.customerName.toLowerCase().includes(q)
+      );
+    });
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('يرجى السماح بالنوافذ المنبثقة لطباعة الكشف');
+      return;
+    }
+
+    const rowsHtml = filtered.map((ord, idx) => `
+      <tr>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${idx + 1}</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; font-family: monospace;">#${ord.id}</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; font-weight: bold; font-size: 14px;">${ord.customerName}</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #065f46;">${ord.totalAmount.toLocaleString()} ج.س (${ord.files ? ord.files.length : 0} ملف)</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center;">${ord.paymentMethod === 'bankak' ? 'بنكك' : ord.paymentMethod === 'okash' ? 'أوكاش' : 'نقداً'} (${ord.paymentStatus === 'verified' ? 'مؤكد ✓' : 'قيد التأكيد'})</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${getStatusBadgeInfo(ord.status).label}</td>
+        <td style="padding: 10px; border: 1px solid #cbd5e1; text-align: center; font-size: 12px;">${new Date(ord.createdAt).toLocaleDateString('ar-SD')}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8">
+        <title>كشف إدارة الطلبيات والعملاء - مكتبة A4</title>
+        <style>
+          body { font-family: system-ui, -apple-system, sans-serif; direction: rtl; padding: 25px; color: #0f172a; }
+          h1 { text-align: center; margin-bottom: 5px; font-size: 22px; color: #0f172a; }
+          .sub { text-align: center; font-size: 13px; color: #475569; margin-top: 0; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+          th { background-color: #0f172a; color: white; padding: 12px; border: 1px solid #0f172a; text-align: center; }
+          tr:nth-child(even) { background-color: #f8fafc; }
+          .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>📋 كشف إدارة الطلبيات والعملاء المختصر</h1>
+        <div class="sub">تاريخ الطباعة: ${new Date().toLocaleString('ar-SD')} | إجمالي الطلبات: ${filtered.length} طلب</div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>رقم الطلب</th>
+              <th>اسم العميل</th>
+              <th>المبلغ والملفات</th>
+              <th>الدفع والحالة</th>
+              <th>حالة الطلب الحالية</th>
+              <th>التاريخ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <div class="footer">مكتبة A4 للطباعة الجامعية والخدمات الطلابية</div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleExportQuickOrdersExcel = () => {
+    const filtered = orders.filter(ord => {
+      if (!quickSearchTerm.trim()) return true;
+      const q = quickSearchTerm.toLowerCase();
+      return (
+        ord.id.toLowerCase().includes(q) ||
+        ord.customerName.toLowerCase().includes(q)
+      );
+    });
+
+    const sumTotalAmount = filtered.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const sumDiscount = filtered.reduce((s, o) => s + (o.discount || 0), 0);
+    const sumDelivery = filtered.reduce((s, o) => s + (o.deliveryFee || 0), 0);
+
+    const rowsHtml = filtered.map((ord, idx) => {
+      const statusLabel = getStatusBadgeInfo(ord.status).label;
+      const payMethodLabel = ord.paymentMethod === 'bankak' ? 'بنكك' : ord.paymentMethod === 'okash' ? 'أوكاش' : 'نقداً';
+      const payStatusLabel = ord.paymentStatus === 'verified' ? 'مؤكد ✓' : 'قيد التأكيد ⏳';
+      const fileCount = ord.files ? ord.files.length : 0;
+      const pageCount = ord.totalPages || 0;
+      const location = [ord.city, ord.addressOrCampus, ord.institution].filter(Boolean).join(' - ');
+      const dateFormatted = new Date(ord.createdAt).toLocaleString('ar-SD');
+
+      return `
+        <tr style="height: 28px; background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+          <td style="border: 1px solid #cbd5e1; text-align: center; font-weight: bold; mso-number-format:'0';">${idx + 1}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #0f172a; font-family: monospace;">#${ord.id}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: right; font-weight: bold; color: #0f172a; padding: 0 8px;">${ord.customerName}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #065f46; background-color: #ecfdf5; mso-number-format:'\\#\\,\\#\\#0';">${ord.totalAmount.toLocaleString()} ج.س</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; color: ${ord.discount ? '#b91c1c' : '#64748b'}; mso-number-format:'\\#\\,\\#\\#0';">${ord.discount ? ord.discount.toLocaleString() + ' ج.س' : '0'}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; color: #334155; mso-number-format:'\\#\\,\\#\\#0';">${(ord.deliveryFee || 0).toLocaleString()} ج.س</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${payMethodLabel}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; color: ${ord.paymentStatus === 'verified' ? '#047857' : '#b45309'}; font-weight: bold;">${payStatusLabel}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #1e293b;">${statusLabel}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; color: #334155;">${fileCount} ملف (${pageCount} ص)</td>
+          <td style="border: 1px solid #cbd5e1; text-align: right; color: #475569; padding: 0 8px;">${location || 'المكتبة'}</td>
+          <td style="border: 1px solid #cbd5e1; text-align: center; color: #64748b; font-size: 11px;">${dateFormatted}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const excelTemplate = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40" dir="rtl" lang="ar">
+      <head>
+        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>كشف الطلبات والعملاء</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayRightToLeft/>
+                  <x:Print>
+                    <x:ValidPrinterInfo/>
+                  </x:Print>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; }
+          table { border-collapse: collapse; width: 100%; }
+          th { background-color: #0f172a; color: #ffffff; font-weight: bold; text-align: center; height: 35px; border: 1px solid #334155; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <!-- Header Banner with Logo / Branding -->
+          <tr>
+            <th colspan="12" style="background-color: #0f172a; color: #fbbf24; font-size: 18pt; font-weight: bold; text-align: center; height: 50px; border: none;">
+              🖨️ مكتبة A4 للطباعة والخدمات الطلابية - كشف إدارة الطلبيات والتقرير المالي
+            </th>
+          </tr>
+          <tr>
+            <th colspan="12" style="background-color: #1e293b; color: #ffffff; font-size: 11pt; text-align: center; height: 30px; border: none;">
+              تاريخ التصدير: ${new Date().toLocaleString('ar-SD')} | عدد الطلبات الإجمالي: ${filtered.length} طلب | إجمالي المبيعات: ${sumTotalAmount.toLocaleString()} ج.س | الخصومات الكلية: ${sumDiscount.toLocaleString()} ج.س
+            </th>
+          </tr>
+          <tr><td colspan="12" style="height: 15px;"></td></tr>
+
+          <!-- Table Headers -->
+          <thead>
+            <tr style="height: 35px;">
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 40px;">#</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 100px;">رقم الطلب</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 180px;">اسم العميل</th>
+              <th style="background-color: #0f172a; color: #fbbf24; border: 1px solid #334155; width: 130px;">المبلغ الإجمالي (ج.س)</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 100px;">الخصم (ج.س)</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 110px;">رسوم التوصيل</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 100px;">طريقة الدفع</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 110px;">حالة الاعتماد</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 130px;">حالة الطلب الحالية</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 120px;">الملفات والصفحات</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 200px;">الموقع والمنطقة</th>
+              <th style="background-color: #0f172a; color: #ffffff; border: 1px solid #334155; width: 140px;">تاريخ ووقت الطلب</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+          <tfoot>
+            <tr style="height: 38px; background-color: #f1f5f9; font-weight: bold;">
+              <td colspan="3" style="border: 2px solid #0f172a; text-align: center; color: #0f172a; font-size: 13px; background-color: #e2e8f0;">
+                الإجمالي الكلي المالي (${filtered.length} طلب)
+              </td>
+              <td style="border: 2px solid #0f172a; text-align: center; color: #065f46; font-size: 14px; background-color: #d1fae5;">
+                ${sumTotalAmount.toLocaleString()} ج.س
+              </td>
+              <td style="border: 2px solid #0f172a; text-align: center; color: #b91c1c; font-size: 13px;">
+                ${sumDiscount.toLocaleString()} ج.س
+              </td>
+              <td style="border: 2px solid #0f172a; text-align: center; color: #334155; font-size: 13px;">
+                ${sumDelivery.toLocaleString()} ج.س
+              </td>
+              <td colspan="6" style="border: 2px solid #0f172a; background-color: #e2e8f0; text-align: center; color: #475569; font-size: 11px;">
+                تم استخراج الكشف تلقائياً من نظام مكتبة A4 للطباعة
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\uFEFF' + excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `كشف_الطلبيات_والعملاء_مكتبة_A4_${new Date().toISOString().split('T')[0]}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportQuickOrdersCSV = () => {
+    const filtered = orders.filter(ord => {
+      if (!quickSearchTerm.trim()) return true;
+      const q = quickSearchTerm.toLowerCase();
+      return (
+        ord.id.toLowerCase().includes(q) ||
+        ord.customerName.toLowerCase().includes(q)
+      );
+    });
+
+    const headers = ['رقم الطلب', 'اسم العميل', 'المبلغ الإجمالي (جنيه)', 'الخصم (جنيه)', 'رسوم التوصيل (جنيه)', 'طريقة الدفع', 'حالة الدفع', 'حالة الطلب', 'عدد الملفات', 'إجمالي الصفحات', 'الموقع والجامعة', 'التاريخ'];
+    const rows = filtered.map(o => [
+      o.id,
+      `"${o.customerName.replace(/"/g, '""')}"`,
+      o.totalAmount,
+      o.discount || 0,
+      o.deliveryFee || 0,
+      o.paymentMethod === 'bankak' ? 'بنكك' : o.paymentMethod === 'okash' ? 'أوكاش' : 'نقداً',
+      o.paymentStatus === 'verified' ? 'مؤكد' : 'قيد التأكيد',
+      getStatusBadgeInfo(o.status).label,
+      o.files ? o.files.length : 0,
+      o.totalPages || 0,
+      `"${[o.city, o.addressOrCampus, o.institution].filter(Boolean).join(' - ').replace(/"/g, '""')}"`,
+      new Date(o.createdAt).toLocaleString('ar-SD')
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `كشف_الطلبيات_والعملاء_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingRates, setEditingRates] = useState<PricingRates>({ ...rates });
   const [isSaved, setIsSaved] = useState(false);
   const [simSheetPrice, setSimSheetPrice] = useState<number>(rates.bwPerPage || 200);
+
+  // Expenses Management State
+  const [expenses, setExpenses] = useState<Expense[]>(() => getStoredExpenses());
+  const [expTitle, setExpTitle] = useState('');
+  const [expCategory, setExpCategory] = useState<Expense['category']>('raw_materials');
+  const [expAmount, setExpAmount] = useState<string>('');
+  const [expDate, setExpDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [expPaymentMethod, setExpPaymentMethod] = useState<Expense['paymentMethod']>('bankak');
+  const [expPaidTo, setExpPaidTo] = useState('');
+  const [expNotes, setExpNotes] = useState('');
+  const [expFilterCategory, setExpFilterCategory] = useState<string>('all');
+
+  const handleAddExpense = (e: React.FormEvent) => {
+    e.preventDefault();
+    const numAmount = parseFloat(expAmount);
+    if (!expTitle.trim() || isNaN(numAmount) || numAmount <= 0) {
+      alert('يرجى إدخال وصف ومبلغ صحيح للمنصرفات');
+      return;
+    }
+
+    const newExpense: Expense = {
+      id: `exp-${Date.now()}`,
+      title: expTitle.trim(),
+      category: expCategory,
+      amount: numAmount,
+      date: expDate || new Date().toISOString().split('T')[0],
+      paymentMethod: expPaymentMethod,
+      paidTo: expPaidTo.trim() || undefined,
+      notes: expNotes.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedExpenses = [newExpense, ...expenses];
+    setExpenses(updatedExpenses);
+    saveStoredExpenses(updatedExpenses);
+
+    addLogEntry(
+      'expense_added',
+      `تم تسجيل منصرف جديد بقيمة ${formatSDG(numAmount)} - (${expTitle})`
+    );
+
+    setExpTitle('');
+    setExpAmount('');
+    setExpPaidTo('');
+    setExpNotes('');
+    alert('تم تسجيل المنصرف بنجاح! ✓');
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    if (confirm('هل أنت تأكد من رغبتك في حذف هذا المنصرف؟')) {
+      const target = expenses.find(x => x.id === id);
+      const updated = expenses.filter(x => x.id !== id);
+      setExpenses(updated);
+      saveStoredExpenses(updated);
+      if (target) {
+        addLogEntry(
+          'expense_deleted',
+          `تم حذف المنصرف بقيمة ${formatSDG(target.amount)} - (${target.title})`
+        );
+      }
+    }
+  };
+
+  // Universities Management State
+  const [universitiesList, setUniversitiesList] = useState<UniversityInfo[]>(() => getStoredUniversities());
+  const [showUniModal, setShowUniModal] = useState<boolean>(false);
+  const [editingUniId, setEditingUniId] = useState<string | null>(null);
+  const [editingCollegeId, setEditingCollegeId] = useState<string | null>(null);
+
+  // University Form Fields
+  const [uniFormName, setUniFormName] = useState('');
+  const [uniFormShortName, setUniFormShortName] = useState('');
+  const [uniFormDesc, setUniFormDesc] = useState('');
+  const [uniFormBadge, setUniFormBadge] = useState('متاحة الآن ✓');
+
+  // College Form Fields
+  const [collegeFormName, setCollegeFormName] = useState('');
+  const [collegeFormDesc, setCollegeFormDesc] = useState('');
+  const [collegeFormBadge, setCollegeFormBadge] = useState('متاحة ✓');
+  const [collegeFormLevels, setCollegeFormLevels] = useState<number>(4);
+  const [collegeFormDegreeType, setCollegeFormDegreeType] = useState<'bachelor' | 'diploma' | 'both'>('bachelor');
+
+  // Department Form Fields
+  const [deptFormName, setDeptFormName] = useState('');
+  const [deptFormDesc, setDeptFormDesc] = useState('');
 
   // Admin Performer Name State
   const [adminPerformerName, setAdminPerformerName] = useState<string>(() => {
@@ -142,6 +490,172 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       localStorage.setItem('a4_admin_performer', val);
     } catch (e) {}
+  };
+
+  const handleOpenAddUniModal = (uniToEdit?: UniversityInfo, collegeToEdit?: UniversityCollege) => {
+    if (uniToEdit) {
+      setEditingUniId(uniToEdit.id);
+      setUniFormName(uniToEdit.name);
+      setUniFormShortName(uniToEdit.shortName || uniToEdit.name);
+      setUniFormDesc(uniToEdit.description || '');
+      setUniFormBadge(uniToEdit.badge || 'متاحة الآن ✓');
+      if (collegeToEdit) {
+        setEditingCollegeId(collegeToEdit.id);
+        setCollegeFormName(collegeToEdit.name);
+        setCollegeFormDesc(collegeToEdit.description || '');
+        setCollegeFormBadge(collegeToEdit.badge || 'متاحة ✓');
+        setCollegeFormLevels(collegeToEdit.levelsCount || 4);
+        setCollegeFormDegreeType(collegeToEdit.degreeType || 'bachelor');
+        setDeptFormName(collegeToEdit.departments[0]?.name || '');
+        setDeptFormDesc(collegeToEdit.departments[0]?.description || '');
+      } else {
+        setEditingCollegeId(null);
+        setCollegeFormName('');
+        setCollegeFormDesc('');
+        setCollegeFormBadge('');
+        setCollegeFormLevels(4);
+        setCollegeFormDegreeType('bachelor');
+        setDeptFormName('');
+        setDeptFormDesc('');
+      }
+    } else {
+      setEditingUniId(null);
+      setEditingCollegeId(null);
+      setUniFormName('');
+      setUniFormShortName('');
+      setUniFormDesc('');
+      setUniFormBadge('متاحة الآن ✓');
+      setCollegeFormName('');
+      setCollegeFormDesc('');
+      setCollegeFormBadge('');
+      setCollegeFormLevels(4);
+      setCollegeFormDegreeType('bachelor');
+      setDeptFormName('');
+      setDeptFormDesc('');
+    }
+    setShowUniModal(true);
+  };
+
+  const handleSaveUniversitySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uniFormName.trim()) {
+      alert('الرجاء كتابة اسم الجامعة');
+      return;
+    }
+
+    let updated = [...universitiesList];
+
+    // Build department object if filled
+    const deptObj: CollegeDepartment[] = deptFormName.trim() ? [{
+      id: deptFormName.trim(),
+      name: deptFormName.trim().startsWith('قسم') ? deptFormName.trim() : `قسم ${deptFormName.trim()}`,
+      description: deptFormDesc.trim() || 'المقررات والشيتات المعتمدة للقسم',
+    }] : [];
+
+    // Build college object
+    const collegeObj: UniversityCollege = {
+      id: editingCollegeId || `col_${Date.now()}`,
+      name: collegeFormName.trim() || 'الكلية العامة',
+      description: collegeFormDesc.trim() || 'شيتات ومذكرات التخصص الأكاديمي',
+      badge: collegeFormBadge.trim() || undefined,
+      levelsCount: Number(collegeFormLevels) || (collegeFormDegreeType === 'diploma' ? 3 : 4),
+      degreeType: collegeFormDegreeType,
+      departments: deptObj.length > 0 ? deptObj : [
+        { id: 'العام', name: 'قسم العام والتخصصي', description: 'المقررات والشيتات العامة' }
+      ],
+    };
+
+    if (editingUniId) {
+      // Edit existing university
+      updated = updated.map(u => {
+        if (u.id === editingUniId) {
+          let cols = [...u.colleges];
+          if (editingCollegeId) {
+            cols = cols.map(c => c.id === editingCollegeId ? collegeObj : c);
+          } else if (collegeFormName.trim()) {
+            cols.push(collegeObj);
+          }
+          return {
+            ...u,
+            name: uniFormName.trim(),
+            shortName: uniFormShortName.trim() || uniFormName.trim(),
+            description: uniFormDesc.trim() || `كليات ومذكرات ${uniFormName.trim()}`,
+            badge: uniFormBadge.trim() || 'متاحة الآن ✓',
+            collegesCount: cols.length,
+            colleges: cols,
+          };
+        }
+        return u;
+      });
+    } else {
+      // Check if university already exists by name
+      const existingUni = updated.find(u => u.name.trim() === uniFormName.trim());
+      if (existingUni) {
+        updated = updated.map(u => {
+          if (u.name.trim() === uniFormName.trim()) {
+            const cols = [...u.colleges, collegeObj];
+            return {
+              ...u,
+              collegesCount: cols.length,
+              colleges: cols,
+            };
+          }
+          return u;
+        });
+      } else {
+        // Create brand new university
+        const newUni: UniversityInfo = {
+          id: `uni_${Date.now()}`,
+          name: uniFormName.trim(),
+          shortName: uniFormShortName.trim() || uniFormName.trim(),
+          description: uniFormDesc.trim() || `كليات ومذكرات ${uniFormName.trim()}`,
+          badge: uniFormBadge.trim() || 'متاحة الآن ✓',
+          collegesCount: 1,
+          colleges: [collegeObj],
+        };
+        updated.push(newUni);
+      }
+    }
+
+    setUniversitiesList(updated);
+    saveStoredUniversities(updated);
+    addLogEntry('sheet_added', `تمت إضافة/تحديث بيانات الجامعة [${uniFormName.trim()}] والكلية [${collegeFormName.trim() || 'العامة'}] والمستويات (${collegeFormLevels} مستويات) وتحديث المكتبة تلقائياً.`);
+    setShowUniModal(false);
+    alert(`تم حفظ وتحديث بيانات (${uniFormName.trim()}) وربطها بالمكتبة تلقائياً بنجاح! 🎉`);
+  };
+
+  const handleDeleteUniversity = (uniId: string, uniName: string) => {
+    if (window.confirm(`هل أنت متاكد من حذف (${uniName}) بالكامل من المكتبة والموقع؟`)) {
+      const updated = universitiesList.filter(u => u.id !== uniId);
+      setUniversitiesList(updated);
+      saveStoredUniversities(updated);
+      addLogEntry('order_deleted', `تم حذف الجامعة [${uniName}] بالكامل من المكتبة.`);
+      alert(`تم حذف (${uniName}) بنجاح.`);
+    }
+  };
+
+  const handleDeleteCollege = (uniId: string, collegeId: string, collegeName: string) => {
+    if (window.confirm(`هل أنت متاكد من حذف كلية (${collegeName})؟`)) {
+      const updated = universitiesList.map(u => {
+        if (u.id === uniId) {
+          const cols = u.colleges.filter(c => c.id !== collegeId);
+          return { ...u, collegesCount: cols.length, colleges: cols };
+        }
+        return u;
+      });
+      setUniversitiesList(updated);
+      saveStoredUniversities(updated);
+      addLogEntry('order_deleted', `تم حذف كلية [${collegeName}] من المكتبة.`);
+    }
+  };
+
+  const handleResetUniversitiesDefault = () => {
+    if (window.confirm('هل أنت متاكد من إعادة ضبط الجامعات والكليات للوضع الافتراضي؟')) {
+      setUniversitiesList(SUDAN_UNIVERSITIES);
+      saveStoredUniversities(SUDAN_UNIVERSITIES);
+      addLogEntry('pricing_updated', 'تمت إعادة ضبط قائمة الجامعات والكليات إلى الوضع الافتراضي.');
+      alert('تمت إعادة ضبط قائمة الجامعات والكليات بنجاح!');
+    }
   };
 
   // Activity Log State & Initial Sample Logs
@@ -318,7 +832,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sheetTitle, setSheetTitle] = useState('');
   const [sheetInstitution, setSheetInstitution] = useState('جامعة النيلين');
   const [sheetFaculty, setSheetFaculty] = useState('كلية علوم الحاسوب وتقانة المعلومات');
-  const [sheetDept, setSheetDept] = useState<string>('علوم الحاسوب');
+  const [sheetDept, setSheetDept] = useState<string>('قسم علوم الحاسوب');
   const [sheetDegree, setSheetDegree] = useState<'bachelor' | 'diploma'>('bachelor');
   const [sheetBatch, setSheetBatch] = useState('batch_33_34');
   const [sheetSemester, setSheetSemester] = useState<number>(1);
@@ -330,6 +844,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sheetBinding, setSheetBinding] = useState<BindingType>('spiral_plastic');
   const [sheetAvailable, setSheetAvailable] = useState<boolean>(true);
   const [sheetSuccessMsg, setSheetSuccessMsg] = useState('');
+
+  // Keep sheet form default selections synced with universitiesList
+  useEffect(() => {
+    if (universitiesList.length > 0) {
+      const matchUni = universitiesList.find(u => u.name === sheetInstitution);
+      if (!matchUni) {
+        const defaultUni = universitiesList[0];
+        setSheetInstitution(defaultUni.name);
+        const defaultCol = defaultUni.colleges[0];
+        if (defaultCol) {
+          setSheetFaculty(defaultCol.name);
+          setSheetDept(defaultCol.departments[0]?.name || 'قسم العام والتخصصي');
+          if (defaultCol.degreeType === 'diploma') setSheetDegree('diploma');
+        }
+      }
+    }
+  }, [universitiesList]);
 
   // Sheets Table Search & Filter
   const [sheetSearch, setSheetSearch] = useState('');
@@ -351,6 +882,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCreateSheetSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!sheetTitle.trim() || !sheetSubject.trim()) return;
+
+    if (!sheetInstitution || !sheetFaculty) {
+      alert('⚠️ تعذر الحفظ: يجب اختيار جامعة وكلية معتمدة بالموقع. إذا لم تكن الجامعة أو الكلية مضافة، يرجى الانتقال إلى (إدارة الجامعات والكليات) لإضافتها أولاً.');
+      return;
+    }
 
     const created: StudySheet = {
       id: `sheet-${Date.now()}`,
@@ -920,16 +1456,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDelete = (orderId: string, customerName: string) => {
-    if (window.confirm(`هل أنت تأكد من حذف طلب العميل "${customerName}" (رقم الطلب: ${orderId}) من قاعدة البيانات نهائياً؟`)) {
-      if (onDeleteOrder) {
-        onDeleteOrder(orderId);
-        addLogEntry(
-          'order_deleted',
-          `تم حذف الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" نهائياً من النظام`,
-          orderId,
-          customerName
-        );
-      }
+    if (onDeleteOrder) {
+      onDeleteOrder(orderId);
+      addLogEntry(
+        'order_deleted',
+        `تم حذف الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" نهائياً من النظام`,
+        orderId,
+        customerName
+      );
     }
   };
 
@@ -1020,6 +1554,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
+  // Computed helpers for current selected university/college/departments in Add Sheet form
+  const currentFormUni = universitiesList.find(u => u.name === sheetInstitution) || universitiesList[0];
+  const currentFormColleges = currentFormUni ? currentFormUni.colleges : [];
+  const currentFormCollege = currentFormColleges.find(c => c.name === sheetFaculty) || currentFormColleges[0];
+  const currentFormDepts = currentFormCollege ? currentFormCollege.departments : [];
+
   // AUTHENTICATED ADMIN DASHBOARD
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
@@ -1058,24 +1598,172 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             الطلبات الواردة ({orders.length})
           </button>
-          <button
-            onClick={() => setActiveTab('pricing')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'pricing' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            <DollarSign className="w-4 h-4" />
-            <span>تعريف أسعار الورق والتسعير</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('sheets_manage')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'sheets_manage' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>إضافة وشيتات الكلية ({sheets.length})</span>
-          </button>
+
+          {/* Combined Financials Dropdown Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowFinancialsMenu(!showFinancialsMenu);
+                if (activeTab !== 'financials') {
+                  setActiveTab('financials');
+                }
+              }}
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'financials'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold'
+                  : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <Wallet className="w-4.5 h-4.5 text-amber-900 shrink-0" />
+              <span>المالية</span>
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showFinancialsMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Financials Dropdown Menu */}
+            {showFinancialsMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowFinancialsMenu(false)} />
+                <div className="absolute top-full right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-800 text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>إدارة الحسابات والمالية:</span>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('financials');
+                      setFinancialSubTab('sales');
+                      setShowFinancialsMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'financials' && financialSubTab === 'sales'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <BarChart3 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>ملخص المبيعات والتقارير</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('financials');
+                      setFinancialSubTab('expenses');
+                      setShowFinancialsMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'financials' && financialSubTab === 'expenses'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Receipt className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>إضافة وإدارة المنصرفات</span>
+                    </div>
+                    <span className="text-xs bg-slate-800 text-amber-300 px-2 py-0.5 rounded-full border border-amber-400/30 font-mono font-bold">
+                      {expenses.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('financials');
+                      setFinancialSubTab('profit_loss');
+                      setShowFinancialsMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'financials' && financialSubTab === 'profit_loss'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>الربح والخسارة (P&L)</span>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+
+          {/* Combined Sheets & Universities Management Dropdown Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowSheetsUniMenu(!showSheetsUniMenu);
+                if (activeTab !== 'sheets_manage' && activeTab !== 'universities') {
+                  setActiveTab('sheets_manage');
+                }
+              }}
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'sheets_manage' || activeTab === 'universities'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold'
+                  : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <Library className="w-4.5 h-4.5 text-amber-900 shrink-0" />
+              <span>إدارة الشيتات والجامعات</span>
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showSheetsUniMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showSheetsUniMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowSheetsUniMenu(false)} />
+                <div className="absolute top-full right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-800 text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                    <Library className="w-3.5 h-3.5" />
+                    <span>حدد القسم المطلوب:</span>
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      setActiveTab('sheets_manage');
+                      setShowSheetsUniMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'sheets_manage'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <BookOpen className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>إدارة الشيتات</span>
+                    </div>
+                    <span className="text-xs bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30 font-mono font-bold">
+                      {sheets.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('universities');
+                      setShowSheetsUniMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'universities'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <GraduationCap className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>إدارة الجامعات والكليات</span>
+                    </div>
+                    <span className="text-xs bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30 font-mono font-bold">
+                      {universitiesList.length}
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={() => setActiveTab('sheets')}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -1118,7 +1806,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Stats Quick Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <span className="text-xs text-slate-500 font-bold block">إجمالي عدد الطلبات</span>
@@ -1142,229 +1830,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       </div>
 
+      {/* Quick Access Button right under stats rectangles */}
+      <div className="mb-8 bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 p-4 rounded-2xl border border-emerald-800/80 shadow-md flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-400 text-amber-950 flex items-center justify-center font-black shadow-sm text-lg shrink-0">
+            📋
+          </div>
+          <div>
+            <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+              <span>كشف كافة الطلبيات وبيانات العملاء المختصر</span>
+              <span className="text-[11px] bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full font-bold">
+                {orders.length} طلب
+              </span>
+            </h4>
+            <p className="text-xs text-slate-300 mt-0.5">وصول سريع وفوري لجميع بيانات وأسماء العملاء وأرقام هاتفهم في جدول شافي ومختصر</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowQuickOrdersModal(true)}
+          className="w-full sm:w-auto px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-xl font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer border border-amber-300 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <UserCheck className="w-4.5 h-4.5 text-amber-950" />
+          <span>عرض كافة الطلبيات وبيانات العملاء بشكل مختصر 📋</span>
+        </button>
+      </div>
+
       {/* ORDERS TAB */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
-          
-          {/* DAILY SALES & BANKAK SUMMARY SECTION */}
-          <div className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-950 text-white rounded-3xl border-2 border-emerald-700 p-5 sm:p-6 shadow-xl space-y-5">
-            
-            {/* Summary Header & Period Filter Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-emerald-800/80 pb-4">
-              <div>
-                <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs mb-1">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  <span>تقرير الحسابات والتحصيل المالي البنكي اليومي</span>
-                </div>
-                <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 flex-wrap">
-                  <span>📊 ملخص المبيعات اليومي والتحصيل</span>
-                  <span className="text-xs font-bold bg-amber-400 text-amber-950 px-3 py-1 rounded-full border border-amber-300 font-mono">
-                    {summaryFilter === 'today' ? `اليوم (${todayLocalDate})` : summaryFilter === 'yesterday' ? `الأمس (${yesterdayLocalDate})` : summaryFilter === 'custom' ? `تاريخ: ${customDate}` : 'الفترة المحددة'}
-                  </span>
-                </h3>
-              </div>
-
-              {/* Date Filter Pills */}
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                {[
-                  { id: 'today', label: 'اليوم ☀️' },
-                  { id: 'yesterday', label: 'الأمس 🌙' },
-                  { id: 'last_7', label: 'آخر 7 أيام 📅' },
-                  { id: 'month', label: 'هذا الشهر 📆' },
-                  { id: 'all', label: 'الكل 🌐' },
-                ].map(b => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => setSummaryFilter(b.id as any)}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                      summaryFilter === b.id
-                        ? 'bg-amber-400 text-amber-950 shadow-md font-black ring-2 ring-amber-300'
-                        : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800 border border-emerald-700/50'
-                    }`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-
-                {/* Custom Date Input */}
-                <div className="flex items-center gap-1.5 bg-emerald-900/90 px-2.5 py-1.5 rounded-lg border border-emerald-700/60">
-                  <span className="text-[11px] text-emerald-300 font-bold">اختر تاريخ:</span>
-                  <input
-                    type="date"
-                    value={customDate}
-                    onChange={(e) => {
-                      setCustomDate(e.target.value);
-                      setSummaryFilter('custom');
-                    }}
-                    className="bg-emerald-950 text-white text-xs font-mono rounded px-2 py-0.5 border border-emerald-600 focus:outline-none"
-                  />
-                </div>
-
-                {/* Export CSV */}
-                <button
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-amber-950 rounded-lg font-black transition-all flex items-center gap-1.5 border border-amber-300 shadow-sm cursor-pointer"
-                  title="تصدير تقرير المبيعات كملف اكسل CSV"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>تصدير CSV 📊</span>
-                </button>
-
-                {/* Print Report */}
-                <button
-                  type="button"
-                  onClick={handlePrintDailyReport}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-1.5 border border-emerald-400/40 shadow-sm cursor-pointer"
-                  title="طباعة تقرير التحصيل والورديات"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>طباعة التقرير 🖨️</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Key Metrics Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              
-              {/* 1. Completed Orders Count */}
-              <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
-                  <span>الطلبات المكتملة والمؤكدة</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-black text-white font-mono">
-                  {completedSummaryCount} <span className="text-xs font-bold text-emerald-200">طلب</span>
-                </div>
-                <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
-                  <span>إجمالي طلبات الفترة:</span>
-                  <strong className="text-white font-bold">{summaryOrders.length} طلب</strong>
-                </div>
-              </div>
-
-              {/* 2. Bankak Total Revenue Collected */}
-              <div className="bg-gradient-to-br from-emerald-800 to-emerald-950 p-4.5 rounded-2xl border-2 border-emerald-400/80 shadow-md space-y-1.5 relative overflow-hidden">
-                <div className="flex items-center justify-between text-xs text-amber-300 font-extrabold">
-                  <span className="flex items-center gap-1.5">
-                    <img src={bankakLogo} alt="بنكك" className="w-4 h-4 rounded-full object-cover bg-white p-0.5" />
-                    <span>تحصيل تطبيق بنكك</span>
-                  </span>
-                  <span className="bg-amber-400 text-amber-950 font-mono text-[10px] px-1.5 py-0.5 rounded font-black">Bankak</span>
-                </div>
-                <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">
-                  {formatSDG(bankakTotalAmount)}
-                </div>
-                <div className="text-[11px] text-emerald-200 pt-1.5 border-t border-emerald-800/60 flex justify-between font-medium">
-                  <span>عمليات بنكك المؤكدة:</span>
-                  <strong className="text-amber-300 font-bold">{bankakSummaryOrders.length} عملية</strong>
-                </div>
-              </div>
-
-              {/* 3. Total Collected Revenue Across All Methods */}
-              <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
-                  <span>إجمالي التحصيل الكلي</span>
-                  <DollarSign className="w-4 h-4 text-amber-400" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-black text-white font-mono">
-                  {formatSDG(completedTotalAmount)}
-                </div>
-                <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
-                  <span>نسبة تحصيل بنكك:</span>
-                  <strong className="text-amber-300 font-bold">
-                    {completedTotalAmount > 0 ? `${Math.round((bankakTotalAmount / completedTotalAmount) * 100)}% عبر بنكك` : '0%'}
-                  </strong>
-                </div>
-              </div>
-
-              {/* 4. Total Printed Sheets/Pages */}
-              <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
-                <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
-                  <span>ورق الطباعة المنجز</span>
-                  <Printer className="w-4 h-4 text-emerald-300" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-black text-white font-mono">
-                  {summaryTotalPages} <span className="text-xs font-bold text-emerald-200">ورقة</span>
-                </div>
-                <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
-                  <span>معدل الورق/الطلب:</span>
-                  <strong className="text-white font-bold">
-                    {completedSummaryCount > 0 ? Math.round(summaryTotalPages / completedSummaryCount) : 0} ورقة
-                  </strong>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Banking Apps & Payment Method Breakdown */}
-            <div className="bg-emerald-950/80 p-4 rounded-2xl border border-emerald-800/80 space-y-3">
-              <div className="flex items-center justify-between text-xs text-emerald-200 font-bold border-b border-emerald-800/60 pb-2">
-                <span className="flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-emerald-400" />
-                  <span>تفاصيل التحصيل المالي المباشر حسب التطبيقات المصرفية والدفع النقدي:</span>
-                </span>
-                <span className="text-[11px] text-emerald-300">
-                  (للطلبات المكتملة والمؤكدة)
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                
-                {/* Bankak App */}
-                <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <img src={bankakLogo} alt="بنكك" className="w-7 h-7 rounded-lg object-contain bg-white p-0.5 border border-emerald-700 shrink-0" />
-                    <div>
-                      <span className="font-bold text-white block text-[11px]">تحويل بنكك (الخرطوم)</span>
-                      <span className="text-amber-300 font-bold text-xs">{bankakSummaryOrders.length} طلب مؤكد</span>
-                    </div>
-                  </div>
-                  <strong className="text-amber-300 text-sm font-black font-mono">{formatSDG(bankakTotalAmount)}</strong>
-                </div>
-
-                {/* Okash App */}
-                <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <img src={okashLogo} alt="أوكاش" className="w-7 h-7 rounded-lg object-contain bg-white p-0.5 border border-emerald-700 shrink-0" />
-                    <div>
-                      <span className="font-bold text-white block text-[11px]">أوكاش (أم درمان)</span>
-                      <span className="text-emerald-300 font-bold text-xs">{okashSummaryOrders.length} طلب مؤكد</span>
-                    </div>
-                  </div>
-                  <strong className="text-emerald-200 text-sm font-black font-mono">{formatSDG(okashTotalAmount)}</strong>
-                </div>
-
-                {/* Fawry App */}
-                <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <img src={fawryLogo} alt="فوري" className="w-7 h-7 rounded-lg object-contain bg-white p-0.5 border border-emerald-700 shrink-0" />
-                    <div>
-                      <span className="font-bold text-white block text-[11px]">فوري (فيصل)</span>
-                      <span className="text-emerald-300 font-bold text-xs">{fawrySummaryOrders.length} طلب مؤكد</span>
-                    </div>
-                  </div>
-                  <strong className="text-emerald-200 text-sm font-black font-mono">{formatSDG(fawryTotalAmount)}</strong>
-                </div>
-
-                {/* Cash / Other */}
-                <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center font-bold text-sm shrink-0">
-                      💵
-                    </div>
-                    <div>
-                      <span className="font-bold text-white block text-[11px]">نقداً (استلام بالمكتبة)</span>
-                      <span className="text-emerald-300 font-bold text-xs">{cashSummaryOrders.length} طلب مؤكد</span>
-                    </div>
-                  </div>
-                  <strong className="text-emerald-200 text-sm font-black font-mono">{formatSDG(cashTotalAmount)}</strong>
-                </div>
-
-              </div>
-            </div>
-
-          </div>
           
           {/* Search & Status Filter Row */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-4">
@@ -1671,7 +2166,712 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* SUB-NAV BAR FOR FINANCIALS */}
+      {activeTab === 'financials' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 max-w-6xl mx-auto mb-6 flex items-center justify-between flex-wrap gap-3 shadow-xl">
+          <div className="flex items-center gap-2 px-3 py-1 text-white">
+            <Wallet className="w-5 h-5 text-amber-400 shrink-0" />
+            <span className="font-black text-xs sm:text-sm">قسم الإدارة المالية والحسابات:</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setFinancialSubTab('sales')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                financialSubTab === 'sales'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-black'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 shrink-0" />
+              <span>ملخص المبيعات والتقارير</span>
+            </button>
+            <button
+              onClick={() => setFinancialSubTab('expenses')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                financialSubTab === 'expenses'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-black'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <Receipt className="w-4 h-4 shrink-0" />
+              <span>إضافة وإدارة المنصرفات ({expenses.length})</span>
+            </button>
+            <button
+              onClick={() => setFinancialSubTab('profit_loss')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                financialSubTab === 'profit_loss'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-black'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4 shrink-0" />
+              <span>تقرير الربح والخسارة (P&L)</span>
+            </button>
+          </div>
+        </div>
+      )}
 
+      {/* FINANCIALS SECTION MAIN TAB */}
+      {activeTab === 'financials' && (
+        <div className="max-w-6xl mx-auto space-y-8">
+          
+          {/* 1. SALES SUMMARY & REPORTS SUB-TAB */}
+          {financialSubTab === 'sales' && (
+            <div className="space-y-6">
+              {/* Daily Sales & Bankak Summary Component */}
+              <div className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-950 text-white rounded-3xl border-2 border-emerald-700 p-5 sm:p-6 shadow-xl space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-emerald-800/80 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs mb-1">
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                      <span>تقرير الحسابات والتحصيل المالي البنكي اليومي</span>
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 flex-wrap">
+                      <span>📊 ملخص المبيعات والتحصيل اليومي</span>
+                      <span className="text-xs font-bold bg-amber-400 text-amber-950 px-3 py-1 rounded-full border border-amber-300 font-mono">
+                        {summaryFilter === 'today' ? `اليوم (${todayLocalDate})` : summaryFilter === 'yesterday' ? `الأمس (${yesterdayLocalDate})` : summaryFilter === 'custom' ? `تاريخ: ${customDate}` : 'الفترة المحددة'}
+                      </span>
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    {[
+                      { id: 'today', label: 'اليوم ☀️' },
+                      { id: 'yesterday', label: 'الأمس 🌙' },
+                      { id: 'last_7', label: 'آخر 7 أيام 📅' },
+                      { id: 'month', label: 'هذا الشهر 📆' },
+                      { id: 'all', label: 'الكل 🌐' },
+                    ].map(b => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSummaryFilter(b.id as any)}
+                        className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                          summaryFilter === b.id
+                            ? 'bg-amber-400 text-amber-950 shadow-md font-black ring-2 ring-amber-300'
+                            : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800 border border-emerald-700/50'
+                        }`}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+
+                    <div className="flex items-center gap-1.5 bg-emerald-900/90 px-2.5 py-1.5 rounded-lg border border-emerald-700/60">
+                      <span className="text-[11px] text-emerald-300 font-bold">اختر تاريخ:</span>
+                      <input
+                        type="date"
+                        value={customDate}
+                        onChange={(e) => {
+                          setCustomDate(e.target.value);
+                          setSummaryFilter('custom');
+                        }}
+                        className="bg-emerald-950 text-white text-xs font-mono rounded px-2 py-0.5 border border-emerald-600 focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleExportCSV}
+                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-amber-950 rounded-lg font-black transition-all flex items-center gap-1.5 border border-amber-300 shadow-sm cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>تصدير CSV 📊</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePrintDailyReport}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition-all flex items-center gap-1.5 border border-emerald-400/40 shadow-sm cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>طباعة التقرير 🖨️</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Key Metrics Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
+                      <span>الطلبات المكتملة والمؤكدة</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+                      {completedSummaryCount} <span className="text-xs font-bold text-emerald-200">طلب</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
+                      <span>إجمالي طلبات الفترة:</span>
+                      <strong className="text-white font-bold">{summaryOrders.length} طلب</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-emerald-800 to-emerald-950 p-4.5 rounded-2xl border-2 border-emerald-400/80 shadow-md space-y-1.5 relative overflow-hidden">
+                    <div className="flex items-center justify-between text-xs text-amber-300 font-extrabold">
+                      <span className="flex items-center gap-1.5">
+                        <img src={bankakLogo} alt="بنكك" className="w-4 h-4 rounded-full object-cover bg-white p-0.5" />
+                        <span>تحصيل تطبيق بنكك</span>
+                      </span>
+                      <span className="bg-amber-400 text-amber-950 font-mono text-[10px] px-1.5 py-0.5 rounded font-black">Bankak</span>
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono">
+                      {formatSDG(bankakTotalAmount)}
+                    </div>
+                    <div className="text-[11px] text-emerald-200 pt-1.5 border-t border-emerald-800/60 flex justify-between font-medium">
+                      <span>عمليات بنكك المؤكدة:</span>
+                      <strong className="text-amber-300 font-bold">{bankakSummaryOrders.length} عملية</strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
+                      <span>إجمالي التحصيل الكلي</span>
+                      <DollarSign className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+                      {formatSDG(completedTotalAmount)}
+                    </div>
+                    <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
+                      <span>نسبة تحصيل بنكك:</span>
+                      <strong className="text-amber-300 font-bold">
+                        {completedTotalAmount > 0 ? `${Math.round((bankakTotalAmount / completedTotalAmount) * 100)}% عبر بنكك` : '0%'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="bg-emerald-950/80 p-4.5 rounded-2xl border border-emerald-700/70 shadow-sm space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-emerald-300 font-bold">
+                      <span>ورق الطباعة المنجز</span>
+                      <Printer className="w-4 h-4 text-emerald-300" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black text-white font-mono">
+                      {summaryTotalPages} <span className="text-xs font-bold text-emerald-200">ورقة</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-300/80 pt-1.5 border-t border-emerald-800/60 flex justify-between">
+                      <span>معدل الورق/الطلب:</span>
+                      <strong className="text-white font-bold">
+                        {completedSummaryCount > 0 ? Math.round(summaryTotalPages / completedSummaryCount) : 0} ورقة
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Banking Breakdown */}
+                <div className="bg-emerald-950/80 p-4 rounded-2xl border border-emerald-800/80 space-y-3">
+                  <div className="flex items-center justify-between text-xs text-emerald-200 font-bold border-b border-emerald-800/60 pb-2">
+                    <span>توزيع المبيعات حسب وسيلة التحصيل الإلكتروني والشفهي:</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-emerald-900/60 p-3 rounded-xl border border-emerald-700/50 flex items-center gap-3">
+                      <img src={bankakLogo} alt="بنكك" className="w-8 h-8 rounded-lg object-cover bg-white p-0.5" />
+                      <div>
+                        <div className="text-[11px] text-emerald-300 font-bold">تطبيق بنكك الخرطوم</div>
+                        <div className="text-lg font-black text-amber-300 font-mono">{formatSDG(bankakTotalAmount)}</div>
+                      </div>
+                    </div>
+                    <div className="bg-emerald-900/60 p-3 rounded-xl border border-emerald-700/50 flex items-center gap-3">
+                      <img src={okashLogo} alt="أوكاش" className="w-8 h-8 rounded-lg object-cover bg-white p-0.5" />
+                      <div>
+                        <div className="text-[11px] text-emerald-300 font-bold">تطبيق أوكاش أمدرمان</div>
+                        <div className="text-lg font-black text-amber-300 font-mono">{formatSDG(okashTotalAmount)}</div>
+                      </div>
+                    </div>
+                    <div className="bg-emerald-900/60 p-3 rounded-xl border border-emerald-700/50 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-800 flex items-center justify-center font-black text-amber-300 text-xs">💵</div>
+                      <div>
+                        <div className="text-[11px] text-emerald-300 font-bold">دفع نقدي / عند الاستلام</div>
+                        <div className="text-lg font-black text-emerald-100 font-mono">{formatSDG(cashTotalAmount)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 2. EXPENSES MANAGEMENT SUB-TAB */}
+          {financialSubTab === 'expenses' && (
+            <div className="space-y-8">
+              {/* Top Banner */}
+              <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                    <Receipt className="w-4 h-4" />
+                    <span>سجل ومصروفات التشغيل المباشرة</span>
+                  </div>
+                  <h2 className="text-2xl font-black text-white">💸 إدارة وتسجيل المنصرفات الفعلية</h2>
+                  <p className="text-xs text-slate-300 max-w-xl">
+                    قم بإنشاء وتوثيق كل المصروفات مثل شراء ورق A4، أحبار ماكينات الطباعة، صيانة السخانات والدرامات، رواتب العمالة، وفواتير التشغيل اليومية.
+                  </p>
+                </div>
+                <div className="bg-amber-400 text-amber-950 p-4 rounded-2xl text-center shadow-lg border border-amber-300 font-black">
+                  <span className="text-xs block text-amber-900 font-bold">إجمالي المنصرفات المسجلة</span>
+                  <span className="text-2xl font-mono block mt-0.5">
+                    {formatSDG(expenses.reduce((sum, e) => sum + e.amount, 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Add Expense Form Card */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-5">
+                <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
+                  <PlusCircle className="w-5 h-5 text-amber-600" />
+                  <h3 className="text-lg font-black text-slate-900">تسجيل فاتورة منصرف جديدة ➕</h3>
+                </div>
+
+                <form onSubmit={handleAddExpense} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* 1. Title / Description */}
+                    <div className="lg:col-span-2">
+                      <label className="block text-xs font-bold text-slate-800 mb-1">البيان / وصف المنصرف *</label>
+                      <input
+                        type="text"
+                        required
+                        value={expTitle}
+                        onChange={e => setExpTitle(e.target.value)}
+                        placeholder="مثال: شراء 5 كراتين ورق A4 80 جرام"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    {/* 2. Amount in SDG */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">المبلغ الإجمالي (بالجنيه SDG) *</label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        step="any"
+                        value={expAmount}
+                        onChange={e => setExpAmount(e.target.value)}
+                        placeholder="مثال: 120000"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs sm:text-sm font-bold text-slate-900 font-mono focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    {/* 3. Category */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">تصنيف المنصرف *</label>
+                      <select
+                        value={expCategory}
+                        onChange={e => setExpCategory(e.target.value as any)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      >
+                        <option value="raw_materials">📦 خامات ومستلزمات (ورق، حبر، تجليد)</option>
+                        <option value="maintenance">🛠️ صيانة وتجهيزات الماكينات</option>
+                        <option value="operations">⚡ تشغيل (كهرباء، إنترنت، إيجار)</option>
+                        <option value="salaries">👨‍🍳 رواتب وأجور العمالة</option>
+                        <option value="delivery_costs">🛵 خدمات لوجستيات وتوصيل</option>
+                        <option value="other">📌 منصرفات أخرى ونثريات</option>
+                      </select>
+                    </div>
+
+                    {/* 4. Expense Date */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">تاريخ الصرف *</label>
+                      <input
+                        type="date"
+                        required
+                        value={expDate}
+                        onChange={e => setExpDate(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-bold font-mono text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    {/* 5. Payment Method */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">طريقة السداد / الدفع *</label>
+                      <select
+                        value={expPaymentMethod}
+                        onChange={e => setExpPaymentMethod(e.target.value as any)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      >
+                        <option value="bankak">تطبيق بنكك (الخرطوم)</option>
+                        <option value="okash">تطبيق أوكاش (أمدرمان)</option>
+                        <option value="cash">نقداً (كاش من الدرج)</option>
+                        <option value="other">طريقة أخرى</option>
+                      </select>
+                    </div>
+
+                    {/* 6. Paid To / Supplier */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">الجهة / المستلم (اختياري)</label>
+                      <input
+                        type="text"
+                        value={expPaidTo}
+                        onChange={e => setExpPaidTo(e.target.value)}
+                        placeholder="مثال: شركة المطبوعات / مهندس الصيانة"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+
+                    {/* 7. Notes */}
+                    <div className="lg:col-span-2">
+                      <label className="block text-xs font-bold text-slate-800 mb-1">ملاحظات إضافية (اختياري)</label>
+                      <input
+                        type="text"
+                        value={expNotes}
+                        onChange={e => setExpNotes(e.target.value)}
+                        placeholder="ملاحظات توضيحية للفاتورة أو سبب الصرف"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-black px-6 py-3 rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer border border-amber-300"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      <span>حفظ وتسجيل المنصرف الآن</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Expenses List & Filtering */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-emerald-600" />
+                    <h3 className="text-lg font-black text-slate-900">جدول كشف المنصرفات الفعلية ({expenses.length})</h3>
+                  </div>
+
+                  {/* Category Filter */}
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <span className="font-bold text-slate-600">تصفية حسب التصنيف:</span>
+                    <select
+                      value={expFilterCategory}
+                      onChange={e => setExpFilterCategory(e.target.value)}
+                      className="bg-slate-100 border border-slate-300 text-slate-900 font-bold px-3 py-1.5 rounded-xl outline-none"
+                    >
+                      <option value="all">كل التصنيفات ({expenses.length})</option>
+                      <option value="raw_materials">📦 خامات ومستلزمات</option>
+                      <option value="maintenance">🛠️ صيانة وتجهيزات</option>
+                      <option value="operations">⚡ تشغيل وكهرباء</option>
+                      <option value="salaries">👨‍🍳 رواتب وأجور</option>
+                      <option value="delivery_costs">🛵 خدمات توصيل</option>
+                      <option value="other">📌 أخرى ونثريات</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-800 text-xs font-black border-b border-slate-200">
+                        <th className="p-3">التاريخ</th>
+                        <th className="p-3">البيان / الوصف</th>
+                        <th className="p-3">التصنيف</th>
+                        <th className="p-3">طريقة الدفع</th>
+                        <th className="p-3">المستلم / الجهة</th>
+                        <th className="p-3">المبلغ</th>
+                        <th className="p-3">الملاحظات</th>
+                        <th className="p-3 text-center">الإجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {expenses
+                        .filter(e => expFilterCategory === 'all' || e.category === expFilterCategory)
+                        .map(item => {
+                          let catLabel = 'أخرى';
+                          let catBg = 'bg-slate-100 text-slate-800';
+                          if (item.category === 'raw_materials') { catLabel = '📦 خامات ومستلزمات'; catBg = 'bg-emerald-100 text-emerald-900 border-emerald-300'; }
+                          else if (item.category === 'maintenance') { catLabel = '🛠️ صيانة'; catBg = 'bg-blue-100 text-blue-900 border-blue-300'; }
+                          else if (item.category === 'operations') { catLabel = '⚡ تشغيل وكهرباء'; catBg = 'bg-amber-100 text-amber-900 border-amber-300'; }
+                          else if (item.category === 'salaries') { catLabel = '👨‍🍳 رواتب وأجور'; catBg = 'bg-purple-100 text-purple-900 border-purple-300'; }
+                          else if (item.category === 'delivery_costs') { catLabel = '🛵 خدمات توصيل'; catBg = 'bg-rose-100 text-rose-900 border-rose-300'; }
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/80 transition-colors font-semibold text-slate-800">
+                              <td className="p-3 font-mono text-slate-600">{item.date}</td>
+                              <td className="p-3 font-bold text-slate-900">{item.title}</td>
+                              <td className="p-3">
+                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${catBg}`}>
+                                  {catLabel}
+                                </span>
+                              </td>
+                              <td className="p-3 font-bold">
+                                {item.paymentMethod === 'bankak' && <span className="bg-emerald-800 text-amber-300 px-2 py-0.5 rounded text-[11px] font-mono">بنكك</span>}
+                                {item.paymentMethod === 'okash' && <span className="bg-rose-700 text-white px-2 py-0.5 rounded text-[11px] font-mono">أوكاش</span>}
+                                {item.paymentMethod === 'cash' && <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[11px]">نقداً</span>}
+                                {item.paymentMethod === 'other' && <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-[11px]">أخرى</span>}
+                              </td>
+                              <td className="p-3 text-slate-700">{item.paidTo || 'غير محدد'}</td>
+                              <td className="p-3 font-black text-rose-700 font-mono text-sm">
+                                -{formatSDG(item.amount)}
+                              </td>
+                              <td className="p-3 text-slate-500 text-[11px]">{item.notes || '-'}</td>
+                              <td className="p-3 text-center">
+                                <button
+                                  onClick={() => handleDeleteExpense(item.id)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف هذا المنصرف"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+
+                  {expenses.length === 0 && (
+                    <div className="text-center py-10 text-slate-500 font-bold">
+                      لا توجد منصرفات مسجلة حالياً
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. PROFIT & LOSS STATEMENT SUB-TAB */}
+          {financialSubTab === 'profit_loss' && (() => {
+            const totalRevenue = orders
+              .filter(o => o.paymentStatus === 'verified' || o.status === 'completed')
+              .reduce((sum, o) => sum + o.totalAmount, 0);
+
+            const totalExpensesAmt = expenses.reduce((sum, e) => sum + e.amount, 0);
+            const netProfit = totalRevenue - totalExpensesAmt;
+            const profitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0';
+
+            const rawCatTotal = expenses.filter(e => e.category === 'raw_materials').reduce((a, b) => a + b.amount, 0);
+            const maintCatTotal = expenses.filter(e => e.category === 'maintenance').reduce((a, b) => a + b.amount, 0);
+            const opsCatTotal = expenses.filter(e => e.category === 'operations').reduce((a, b) => a + b.amount, 0);
+            const salCatTotal = expenses.filter(e => e.category === 'salaries').reduce((a, b) => a + b.amount, 0);
+            const delCatTotal = expenses.filter(e => e.category === 'delivery_costs').reduce((a, b) => a + b.amount, 0);
+            const otherCatTotal = expenses.filter(e => e.category === 'other').reduce((a, b) => a + b.amount, 0);
+
+            return (
+              <div className="space-y-8">
+                {/* Header Banner */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                      <TrendingUp className="w-4 h-4" />
+                      <span>قائمة الدخل والنتائج المالية الرسمية</span>
+                    </div>
+                    <h2 className="text-2xl font-black text-white">📈 تقرير الربح والخسارة الشامل (P&L)</h2>
+                    <p className="text-xs text-slate-300 max-w-xl">
+                      حساب تلقائي لجميع الإيرادات والمبيعات المؤكدة مطروحاً منها كافة المنصرفات والمصروفات التشغيلية الموثقة بالمرتكزات الحسابية.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => window.print()}
+                    className="bg-amber-400 hover:bg-amber-300 text-amber-950 px-5 py-3 rounded-2xl font-black text-xs sm:text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer border border-amber-300"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>طباعة القائمة المالية 🖨️</span>
+                  </button>
+                </div>
+
+                {/* 4 Core Financial Metric Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  
+                  {/* 1. Total Revenue */}
+                  <div className="bg-emerald-900/90 text-white p-5 rounded-3xl border border-emerald-700 shadow-md space-y-2">
+                    <div className="flex items-center justify-between text-xs text-emerald-200 font-bold">
+                      <span>إجمالي المبيعات والإيرادات</span>
+                      <ArrowUpRight className="w-5 h-5 text-emerald-300" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-300">
+                      {formatSDG(totalRevenue)}
+                    </div>
+                    <p className="text-[11px] text-emerald-200/80 pt-2 border-t border-emerald-800/80">
+                      إجمالي الطلبات المسددة والمؤكدة
+                    </p>
+                  </div>
+
+                  {/* 2. Total Expenses */}
+                  <div className="bg-rose-950/90 text-white p-5 rounded-3xl border border-rose-800 shadow-md space-y-2">
+                    <div className="flex items-center justify-between text-xs text-rose-200 font-bold">
+                      <span>إجمالي المنصرفات والتكاليف</span>
+                      <ArrowDownRight className="w-5 h-5 text-rose-400" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black font-mono text-rose-300">
+                      {formatSDG(totalExpensesAmt)}
+                    </div>
+                    <p className="text-[11px] text-rose-200/80 pt-2 border-t border-rose-900/80">
+                      مجموع الفواتير التشغيلية الموثقة ({expenses.length} مصروف)
+                    </p>
+                  </div>
+
+                  {/* 3. Net Profit / Loss */}
+                  <div className={`p-5 rounded-3xl border shadow-lg space-y-2 ${
+                    netProfit >= 0 
+                      ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-amber-950 border-amber-400'
+                      : 'bg-gradient-to-br from-rose-700 to-rose-900 text-white border-rose-600'
+                  }`}>
+                    <div className="flex items-center justify-between text-xs font-black">
+                      <span>صافي الربح / الخسارة</span>
+                      <Coins className="w-5 h-5" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black font-mono">
+                      {formatSDG(netProfit)}
+                    </div>
+                    <div className="pt-2 border-t border-black/10 flex items-center justify-between text-[11px] font-black">
+                      <span>النتيجة المالية:</span>
+                      <span className="bg-white/30 px-2 py-0.5 rounded-full">
+                        {netProfit >= 0 ? 'ربح صافي ممتاز 🟢' : 'عجز / خسارة 🔴'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 4. Profit Margin % */}
+                  <div className="bg-slate-900 text-white p-5 rounded-3xl border border-slate-800 shadow-md space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-300 font-bold">
+                      <span>هامش الربح التشغيلي</span>
+                      <Calculator className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400">
+                      {profitMargin}%
+                    </div>
+                    <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-800">
+                      نسبة صافي الربح من إجمالي المبيعات
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* Expense Breakdown Visual Progress Bars */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-5">
+                  <h3 className="text-lg font-black text-slate-900 pb-3 border-b border-slate-100 flex items-center gap-2">
+                    <PieChart className="w-5 h-5 text-amber-600" />
+                    <span>تحليل وتوزيع المنصرفات حسب القطاعات التشغيلية</span>
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[
+                      { name: '📦 خامات ومستلزمات (ورق، حبر، تجليد)', amt: rawCatTotal, color: 'bg-emerald-500' },
+                      { name: '🛠️ صيانة ماكينات الطباعة والتجهيزات', amt: maintCatTotal, color: 'bg-blue-500' },
+                      { name: '⚡ تشغيل وكهرباء وإنترنت بالمكتبة', amt: opsCatTotal, color: 'bg-amber-500' },
+                      { name: '👨‍🍳 رواتب وأجور العمالة', amt: salCatTotal, color: 'bg-purple-500' },
+                      { name: '🛵 خدمات اللوجستيات والتوصيل', amt: delCatTotal, color: 'bg-rose-500' },
+                      { name: '📌 منصرفات أخرى ونثريات', amt: otherCatTotal, color: 'bg-slate-500' },
+                    ].map((item, idx) => {
+                      const pct = totalExpensesAmt > 0 ? Math.round((item.amt / totalExpensesAmt) * 100) : 0;
+                      return (
+                        <div key={idx} className="space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                            <span>{item.name}</span>
+                            <span className="font-mono text-slate-900 font-black">{formatSDG(item.amt)} ({pct}%)</span>
+                          </div>
+                          <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                            <div className={`h-full ${item.color} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Formal Income Statement Table */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-4">
+                  <h3 className="text-lg font-black text-slate-900 pb-2 border-b border-slate-100 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-emerald-600" />
+                    <span>جدول القائمة المالية التفصيلية (قائمة الدخل)</span>
+                  </h3>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-900 text-white text-xs font-black">
+                          <th className="p-3.5 rounded-r-xl">البند / البيان المالي</th>
+                          <th className="p-3.5 text-left rounded-l-xl">المبلغ بالجنيه السوداني (SDG)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 text-xs sm:text-sm font-bold">
+                        {/* Section 1: Revenue */}
+                        <tr className="bg-emerald-50 text-emerald-950 font-black">
+                          <td className="p-3">أولاً: إجمالي الإيرادات والمبيعات التشغيلية المؤكدة</td>
+                          <td className="p-3 text-left font-mono text-base text-emerald-800">{formatSDG(totalRevenue)}</td>
+                        </tr>
+
+                        {/* Section 2: Expenses */}
+                        <tr className="bg-rose-50 text-rose-950 font-black">
+                          <td className="p-3">ثانياً: إجمالي تكاليف التشغيل والمنصرفات المباشرة</td>
+                          <td className="p-3 text-left font-mono text-base text-rose-800">-{formatSDG(totalExpensesAmt)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• خامات ومستلزمات الطباعة والورق</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(rawCatTotal)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• صيانة وتأهيل الماكينات</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(maintCatTotal)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• مصاريف التشغيل والإنترنت والكهرباء</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(opsCatTotal)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• رواتب وأجور طاقم العمل</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(salCatTotal)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• رسوم وتكاليف الخدمات والتوصيل</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(delCatTotal)}</td>
+                        </tr>
+                        <tr className="text-slate-600 font-semibold text-xs">
+                          <td className="p-2.5 pr-8">• منصرفات نثريات وأخرى</td>
+                          <td className="p-2.5 text-left font-mono">-{formatSDG(otherCatTotal)}</td>
+                        </tr>
+
+                        {/* Net Result */}
+                        <tr className={`font-black text-base ${netProfit >= 0 ? 'bg-amber-100 text-amber-950' : 'bg-rose-100 text-rose-950'}`}>
+                          <td className="p-4">ثالثاً: صافي أرباح الدورة التشغيلية (النتيجة النهائية)</td>
+                          <td className="p-4 text-left font-mono text-lg">{formatSDG(netProfit)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+        </div>
+      )}
+
+
+
+      {/* SUB-NAV BAR FOR SHEETS & UNIVERSITIES MANAGEMENT */}
+      {(activeTab === 'sheets_manage' || activeTab === 'universities') && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 max-w-6xl mx-auto mb-6 flex items-center justify-between flex-wrap gap-3 shadow-xl">
+          <div className="flex items-center gap-2 px-3 py-1 text-white">
+            <Library className="w-5 h-5 text-amber-400 shrink-0" />
+            <span className="font-black text-xs sm:text-sm">قسم إدارة الشيتات والجامعات:</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setActiveTab('sheets_manage')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'sheets_manage'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-black'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 shrink-0" />
+              <span>إدارة الشيتات ({sheets.length})</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('universities')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'universities'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-black'
+                  : 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white'
+              }`}
+            >
+              <GraduationCap className="w-4 h-4 shrink-0" />
+              <span>إدارة الجامعات والكليات ({universitiesList.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* COLLEGE SHEETS MANAGEMENT TAB */}
       {activeTab === 'sheets_manage' && (
@@ -1715,7 +2915,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <Plus className="w-5 h-5 text-emerald-600" />
                   إضافة شيت / مذكرة جديدة لمكتبة الكلية
                 </h3>
-                <p className="text-xs text-slate-500">قم بتعبئة تفاصيل المادة، القسم، الدفعة، وعدد الصفحات لإدراج الشيت بالمكتبة وتحديد سعره للطلاب</p>
+                <p className="text-xs text-slate-500">قم بتعبئة تفاصيل المادة، القسم، وعدد الصفحات لإدراج الشيت بالمكتبة وتحديد سعره للطلاب</p>
               </div>
             </div>
 
@@ -1735,50 +2935,111 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">الجامعة *</label>
-                  <input
-                    type="text"
+                  <select
                     required
                     value={sheetInstitution}
-                    onChange={e => setSheetInstitution(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  />
+                    onChange={e => {
+                      const newUniName = e.target.value;
+                      setSheetInstitution(newUniName);
+                      const uniObj = universitiesList.find(u => u.name === newUniName);
+                      if (uniObj && uniObj.colleges.length > 0) {
+                        const firstCol = uniObj.colleges[0];
+                        setSheetFaculty(firstCol.name);
+                        if (firstCol.degreeType === 'diploma') {
+                          setSheetDegree('diploma');
+                        } else if (firstCol.degreeType === 'bachelor') {
+                          setSheetDegree('bachelor');
+                        }
+                        if (firstCol.departments.length > 0) {
+                          setSheetDept(firstCol.departments[0].name);
+                        } else {
+                          setSheetDept('قسم العام والتخصصي');
+                        }
+                      } else {
+                        setSheetFaculty('');
+                        setSheetDept('');
+                      }
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+                  >
+                    {universitiesList.map(u => (
+                      <option key={u.id} value={u.name}>{u.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">الكلية *</label>
                   <select
+                    required
                     value={sheetFaculty}
                     onChange={e => {
                       const newFac = e.target.value;
                       setSheetFaculty(newFac);
-                      const col = NEELAIN_COLLEGES.find(c => c.name === newFac);
-                      if (col && col.departments[0]) {
-                        setSheetDept(col.departments[0].name);
+                      const colObj = currentFormColleges.find(c => c.name === newFac);
+                      if (colObj) {
+                        if (colObj.degreeType === 'diploma') {
+                          setSheetDegree('diploma');
+                        } else if (colObj.degreeType === 'bachelor') {
+                          setSheetDegree('bachelor');
+                        }
+                        if (colObj.departments.length > 0) {
+                          setSheetDept(colObj.departments[0].name);
+                        } else {
+                          setSheetDept('قسم العام والتخصصي');
+                        }
                       }
                     }}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                   >
-                    {NEELAIN_COLLEGES.map(c => (
-                      <option key={c.id} value={c.name}>{c.name}</option>
-                    ))}
+                    {currentFormColleges.length > 0 ? (
+                      currentFormColleges.map(c => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))
+                    ) : (
+                      <option value="">لا توجد كليات مضافة بهذه الجامعة</option>
+                    )}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">قسم الكلية *</label>
                   <select
+                    required
                     value={sheetDept}
                     onChange={e => setSheetDept(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                   >
-                    {(NEELAIN_COLLEGES.find(c => c.name === sheetFaculty)?.departments || []).map(d => (
-                      <option key={d.id} value={d.name}>{d.name}</option>
-                    ))}
+                    {currentFormDepts.length > 0 ? (
+                      currentFormDepts.map(d => (
+                        <option key={d.id} value={d.name}>{d.name}</option>
+                      ))
+                    ) : (
+                      <option value="قسم العام والتخصصي">قسم العام والتخصصي</option>
+                    )}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* HELPER BANNER TO UNIVERSITIES MANAGEMENT */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="text-amber-950 font-bold">
+                    الجامعات والكليات مرتبطة حصرياً بقاعدة بيانات إدارة الجامعات. لإضافة جامعة أو كلية غير مضافة:
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('universities')}
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>انتقل إلى إدارة الجامعات والكليات 👈</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">الدرجة العلمية *</label>
                   <select
@@ -1788,22 +3049,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <option value="bachelor">بكالوريوس</option>
                     <option value="diploma">دبلوم تقني</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-800 font-bold mb-1">الدفعة الدراسية *</label>
-                  <select
-                    value={sheetBatch}
-                    onChange={e => setSheetBatch(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
-                  >
-                    <option value="batch_28">الدفعة 28 (دفعة 2018)</option>
-                    <option value="batch_29">الدفعة 29 (دفعة 2019)</option>
-                    <option value="batch_30">الدفعة 30 (دفعة 2020)</option>
-                    <option value="batch_31">الدفعة 31 (دفعة 2021)</option>
-                    <option value="batch_32">الدفعة 32 (دفعة 2022)</option>
-                    <option value="batch_33_34">الدفعة 33 و 34 (دفعة 2023 - 2024)</option>
                   </select>
                 </div>
 
@@ -2098,19 +3343,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-800 font-bold mb-1">الجامعة *</label>
+                  <select
+                    value={editingSheet.institution}
+                    onChange={e => {
+                      const uniName = e.target.value;
+                      const uniObj = universitiesList.find(u => u.name === uniName);
+                      const firstCol = uniObj?.colleges[0];
+                      setEditingSheet({
+                        ...editingSheet,
+                        institution: uniName,
+                        facultyOrYear: firstCol ? firstCol.name : '',
+                        department: firstCol?.departments[0]?.name || 'قسم العام والتخصصي'
+                      });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 text-xs"
+                  >
+                    {universitiesList.map(u => (
+                      <option key={u.id} value={u.name}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-800 font-bold mb-1">الكلية *</label>
+                  <select
+                    value={editingSheet.facultyOrYear}
+                    onChange={e => {
+                      const colName = e.target.value;
+                      const uniObj = universitiesList.find(u => u.name === editingSheet.institution) || universitiesList[0];
+                      const colObj = uniObj?.colleges.find(c => c.name === colName);
+                      setEditingSheet({
+                        ...editingSheet,
+                        facultyOrYear: colName,
+                        department: colObj?.departments[0]?.name || 'قسم العام والتخصصي'
+                      });
+                    }}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 text-xs"
+                  >
+                    {((universitiesList.find(u => u.name === editingSheet.institution) || universitiesList[0])?.colleges || []).map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">القسم / التخصص *</label>
-                  <input
-                    type="text"
-                    required
+                  <select
                     value={editingSheet.department}
                     onChange={e => setEditingSheet({ ...editingSheet, department: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 text-xs"
-                    placeholder="اسم القسم"
-                  />
+                  >
+                    {(((universitiesList.find(u => u.name === editingSheet.institution) || universitiesList[0])?.colleges.find(c => c.name === editingSheet.facultyOrYear) || universitiesList[0]?.colleges[0])?.departments || []).map(d => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">الدرجة العلمية *</label>
                   <select
@@ -2122,9 +3415,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="diploma">دبلوم تقني</option>
                   </select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-800 font-bold mb-1">عدد الصفحات *</label>
                   <input
@@ -2559,7 +3850,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span>إصدار كوبون تخفيض جديد</span>
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">اسم/رمز الكوبون (الرمز) *</label>
                   <input
@@ -2567,7 +3858,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     required
                     value={newCouponCode}
                     onChange={e => setNewCouponCode(e.target.value.toUpperCase())}
-                    placeholder="مثال: BATCH29"
+                    placeholder="مثال: OFF15"
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-mono font-black text-slate-900 tracking-wider text-sm focus:ring-2 focus:ring-emerald-500 outline-none uppercase"
                   />
                 </div>
@@ -2590,29 +3881,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">الدفعة الدراسية المستهدفة *</label>
-                  <select
-                    value={newCouponBatch}
-                    onChange={e => setNewCouponBatch(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
-                  >
-                    <option value="all">جميع الدفعات (كوبون عام)</option>
-                    <option value="batch_28">الدفعة 28 (دفعة 2018)</option>
-                    <option value="batch_29">الدفعة 29 (دفعة 2019)</option>
-                    <option value="batch_30">الدفعة 30 (دفعة 2020)</option>
-                    <option value="batch_31">الدفعة 31 (دفعة 2021)</option>
-                    <option value="batch_32">الدفعة 32 (دفعة 2022)</option>
-                    <option value="batch_33_34">الدفعة 33 و 34 (دفعة 2023 - 2024)</option>
-                  </select>
-                </div>
-
-                <div>
                   <label className="block text-xs font-bold text-slate-800 mb-1">وصف أو ملاحظة الكوبون</label>
                   <input
                     type="text"
                     value={newCouponNotes}
                     onChange={e => setNewCouponNotes(e.target.value)}
-                    placeholder="مثال: خصم خاص لطلاب دفعة 29"
+                    placeholder="مثال: خصم خاص لجميع الطلاب"
                     className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                   />
                 </div>
@@ -2934,6 +4208,472 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* UNIVERSITIES MANAGEMENT TAB (إدارة الجامعات والكليات الربط المباشر بالمكتبة) */}
+      {activeTab === 'universities' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+            
+            {/* Header & Main Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
+              <div>
+                <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs mb-1">
+                  <GraduationCap className="w-4 h-4 text-emerald-600" />
+                  <span>إدارة هيكل الجامعات السودانية • Direct Library Synchronization</span>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <span>🏛️ إدارة الجامعات والكليات الأكاديمية</span>
+                  <span className="text-xs font-mono bg-emerald-100 text-emerald-950 px-3 py-1 rounded-full border border-emerald-300 font-bold">
+                    مربوطة تلقائياً مع المكتبة ⚡
+                  </span>
+                </h3>
+                <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                  إضافة، تعديل، أو حذف الجامعات والكليات والأقسام وتحديد المستويات الدراسية مع تحديث المكتبة العامة فوراً.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddUniModal()}
+                  className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة جامعة / كلية جديدة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetUniversitiesDefault}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer"
+                  title="استعادة القائمة الافتراضية للجامعات"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>إعادة ضبط افتراضي</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Summary Stats Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
+              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 text-emerald-900 rounded-xl">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-500 block">عدد الجامعات المسجلة</span>
+                  <span className="text-xl font-black text-slate-900">{universitiesList.length} جامعة</span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                <div className="p-2.5 bg-amber-100 text-amber-900 rounded-xl">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-500 block">إجمالي الكليات المعتمدة</span>
+                  <span className="text-xl font-black text-slate-900">
+                    {universitiesList.reduce((acc, u) => acc + (u.colleges?.length || 0), 0)} كلية
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                <div className="p-2.5 bg-blue-100 text-blue-900 rounded-xl">
+                  <FolderTree className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-500 block">إجمالي الأقسام والتخصصات</span>
+                  <span className="text-xl font-black text-slate-900">
+                    {universitiesList.reduce((acc, u) => acc + u.colleges.reduce((cAcc, c) => cAcc + (c.departments?.length || 0), 0), 0)} قسم
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Universities Cards Grid */}
+            <div className="space-y-6">
+              {universitiesList.map((uni) => (
+                <div 
+                  key={uni.id}
+                  className="bg-white border-2 border-slate-200 rounded-2xl p-5 shadow-2xs hover:border-emerald-300 transition-all space-y-4"
+                >
+                  {/* University Header Row */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-900 text-amber-300 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border border-emerald-700 shadow-xs">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-lg font-black text-slate-900">{uni.name}</h4>
+                          {uni.badge && (
+                            <span className="bg-amber-100 text-amber-950 font-black text-[11px] px-2.5 py-0.5 rounded-full border border-amber-300">
+                              {uni.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{uni.description}</p>
+                      </div>
+                    </div>
+
+                    {/* Uni Action Buttons */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddUniModal(uni)}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>إضافة كلية</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddUniModal(uni, uni.colleges[0])}
+                        className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>تعديل</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUniversity(uni.id, uni.name)}
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                        title="حذف الجامعة"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Colleges inside this university */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                    {uni.colleges.map((col) => (
+                      <div 
+                        key={col.id} 
+                        className="bg-slate-50/80 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between space-y-3"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                              <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>{col.name}</span>
+                            </h5>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {col.degreeType === 'diploma' && (
+                                <span className="bg-purple-100 text-purple-900 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                  📜 دبلوم
+                                </span>
+                              )}
+                              {col.degreeType === 'both' && (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                  🎓📜 بكالوريوس + دبلوم
+                                </span>
+                              )}
+                              {(col.degreeType === 'bachelor' || !col.degreeType) && (
+                                <span className="bg-blue-100 text-blue-900 border border-blue-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                  🎓 بكالوريوس
+                                </span>
+                              )}
+                              <span className="bg-emerald-100 text-emerald-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                {col.levelsCount || 4} مستويات
+                              </span>
+                            </div>
+                          </div>
+                          {col.description && (
+                            <p className="text-xs text-slate-600 line-clamp-2 mb-2">{col.description}</p>
+                          )}
+
+                          {/* Departments Tags */}
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {col.departments.map((dept, dIdx) => (
+                              <span 
+                                key={dIdx} 
+                                className="bg-white text-slate-800 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-slate-200"
+                              >
+                                {dept.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* College Action Bar */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                          <span className="text-slate-500 font-bold text-[11px]">
+                            {col.departments.length} أقسام تخصصية
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddUniModal(uni, col)}
+                              className="text-amber-800 hover:text-amber-950 hover:bg-amber-100/70 p-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>تعديل</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCollege(uni.id, col.id, col.name)}
+                              className="text-rose-600 hover:text-rose-800 hover:bg-rose-100/70 p-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>حذف</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                </div>
+              ))}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DIALOG: ADD/EDIT UNIVERSITY & COLLEGE */}
+      {showUniModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto dir-rtl text-right">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 my-8" onClick={e => e.stopPropagation()}>
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 bg-amber-400 text-slate-950 rounded-2xl flex items-center justify-center font-black">
+                  <GraduationCap className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    {editingUniId ? 'تعديل بيانات الجامعة والكلية' : 'إضافة جامعة جديدة / كلية جديدة'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    سيتم ربط المخرجات تلقائياً بمكتبة الشيتات في أرجاء الموقع
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUniModal(false)}
+                className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveUniversitySubmit} className="space-y-4 text-xs sm:text-sm">
+              
+              {/* SECTION 1: UNIVERSITY DETAILS */}
+              <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200 space-y-3">
+                <h4 className="font-black text-emerald-900 flex items-center gap-1.5 text-xs">
+                  <Building2 className="w-4 h-4 text-emerald-600" />
+                  <span>1. بيانات الجامعة الأساسية (University)</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">اسم الجامعة *</label>
+                    <input
+                      type="text"
+                      required
+                      value={uniFormName}
+                      onChange={e => setUniFormName(e.target.value)}
+                      placeholder="مثال: جامعة الخرطوم، جامعة الجزيرة..."
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">الاسم المختصر</label>
+                    <input
+                      type="text"
+                      value={uniFormShortName}
+                      onChange={e => setUniFormShortName(e.target.value)}
+                      placeholder="مثال: الخرطوم، الجزيرة..."
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">الوصف المختصر للجامعة</label>
+                    <input
+                      type="text"
+                      value={uniFormDesc}
+                      onChange={e => setUniFormDesc(e.target.value)}
+                      placeholder="كليات: الهندسة، الحاسوب، العلوم..."
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">شارة الجامعة (Badge)</label>
+                    <input
+                      type="text"
+                      value={uniFormBadge}
+                      onChange={e => setUniFormBadge(e.target.value)}
+                      placeholder="مثال: متاحة الآن ✓"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: COLLEGE DETAILS */}
+              <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200 space-y-3">
+                <h4 className="font-black text-amber-950 flex items-center gap-1.5 text-xs">
+                  <GraduationCap className="w-4 h-4 text-amber-600" />
+                  <span>2. بيانات الكلية والدرجة الأكاديمية (College)</span>
+                </h4>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">اسم الكلية</label>
+                  <input
+                    type="text"
+                    value={collegeFormName}
+                    onChange={e => setCollegeFormName(e.target.value)}
+                    placeholder="مثال: كلية علوم الحاسوب وتقانة المعلومات، كلية الهندسة..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+
+                {/* DEGREE TYPE PICKER (تحديد دبلوم أو بكالوريوس) */}
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1.5">الدرجة العلمية / نوع التخصص *</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollegeFormDegreeType('bachelor');
+                        if (collegeFormLevels === 3) setCollegeFormLevels(4);
+                      }}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                        collegeFormDegreeType === 'bachelor'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-300'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-sm">🎓</span>
+                      <span>بكالوريوس</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollegeFormDegreeType('diploma');
+                        setCollegeFormLevels(3);
+                      }}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                        collegeFormDegreeType === 'diploma'
+                          ? 'bg-purple-600 text-white border-purple-700 shadow-sm ring-2 ring-purple-300'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-sm">📜</span>
+                      <span>دبلوم تقني</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCollegeFormDegreeType('both');
+                      }}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-black transition-all flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                        collegeFormDegreeType === 'both'
+                          ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-sm ring-2 ring-amber-300'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-sm">🎓📜</span>
+                      <span>بكالوريوس + دبلوم</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">عدد المستويات الدراسية (Levels)</label>
+                    <select
+                      value={collegeFormLevels}
+                      onChange={e => setCollegeFormLevels(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-black text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    >
+                      <option value={3}>3 مستويات (دبلوم - 6 سمسترات)</option>
+                      <option value={4}>4 مستويات (بكالوريوس - 8 سمسترات)</option>
+                      <option value={5}>5 مستويات (بكالوريوس شرف / هندسة - 10 سمسترات)</option>
+                      <option value={6}>6 مستويات (طب وبشري - 12 سمستر)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">عدد الفصول (السمسترات)</label>
+                    <div className="px-3 py-2 bg-slate-100 rounded-xl font-black text-emerald-800 border border-slate-300 text-center">
+                      {collegeFormLevels * 2} فصول دراسية (سمستر)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: DEPARTMENT DETAILS */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <h4 className="font-black text-slate-900 flex items-center gap-1.5 text-xs">
+                  <FolderTree className="w-4 h-4 text-emerald-600" />
+                  <span>3. القسم الأكاديمي أو التخصص (Department)</span>
+                </h4>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">اسم القسم / التخصص</label>
+                  <input
+                    type="text"
+                    value={deptFormName}
+                    onChange={e => setDeptFormName(e.target.value)}
+                    placeholder="مثال: قسم علوم الحاسوب، قسم هندسة البرمجيات، قسم المحاسبة..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">وصف القسم أو التخصص</label>
+                  <input
+                    type="text"
+                    value={deptFormDesc}
+                    onChange={e => setDeptFormDesc(e.target.value)}
+                    placeholder="وصف المقررات والتشعيب..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* SUBMIT BUTTONS */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowUniModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+
+                <button
+                  type="submit"
+                  className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-7 py-2.5 rounded-xl transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  حفظ الجامعة وربطها بالمكتبة 💾
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
       {/* Proof Image Viewer Modal */}
       {selectedProofImage && (
         <div 
@@ -2955,6 +4695,271 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               alt="إشعار التحويل الكامل" 
               className="w-full h-auto max-h-[80vh] object-contain rounded-xl bg-slate-50"
             />
+          </div>
+        </div>
+      )}
+
+      {/* Quick Concise Orders & Customers Modal */}
+      {showQuickOrdersModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-3 sm:p-6 backdrop-blur-md overflow-y-auto"
+          onClick={() => setShowQuickOrdersModal(false)}
+        >
+          <div 
+            className="relative w-full max-w-5xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 sm:p-6 flex items-center justify-between gap-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-400 text-amber-950 flex items-center justify-center font-black text-xl shadow-md shrink-0">
+                  📋
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-lg sm:text-xl font-black text-white">كشف كافة الطلبيات وإدارة العملاء</h3>
+                    <span className="text-xs font-mono font-bold bg-amber-400 text-amber-950 px-2.5 py-0.5 rounded-full">
+                      {orders.length} طلب
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    إدارة فورية لحالة الطلبات والتحصيل مع إمكانية طباعة الكشف أو تنزيله كملف Excel CSV.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowQuickOrdersModal(false)}
+                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-colors cursor-pointer shrink-0"
+                title="إغلاق النافذة"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Search & Filter Toolbar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={quickSearchTerm}
+                  onChange={e => setQuickSearchTerm(e.target.value)}
+                  placeholder="بحث سريع باسم العميل أو رقم الطلب..."
+                  className="w-full pl-3 pr-10 py-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                {quickSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickSearchTerm('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleExportQuickOrdersExcel}
+                  className="px-3.5 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-emerald-500 hover:scale-[1.02] active:scale-[0.98]"
+                  title="تنزيل الكشف منسق بجدول ملون وعنوان وهيدر جاهز لإكسل"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                  <span>تنزيل Excel منسق (.xls) 📊</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportQuickOrdersCSV}
+                  className="px-3 py-2.5 bg-white hover:bg-slate-100 text-slate-800 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-slate-300"
+                  title="تنزيل الكشف كملف CSV"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-600" />
+                  <span>ملف CSV 📄</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintQuickOrders}
+                  className="px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-300 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm border border-slate-700 hover:scale-[1.02] active:scale-[0.98]"
+                  title="طباعة كشف الطلبيات والعملاء"
+                >
+                  <Printer className="w-4 h-4 text-amber-400" />
+                  <span>طباعة الكشف 🖨️</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content - Simplified Table */}
+            <div className="p-4 overflow-y-auto flex-1">
+              {(() => {
+                const filtered = orders.filter(ord => {
+                  if (!quickSearchTerm.trim()) return true;
+                  const q = quickSearchTerm.toLowerCase();
+                  return (
+                    ord.id.toLowerCase().includes(q) ||
+                    ord.customerName.toLowerCase().includes(q)
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-500 space-y-2">
+                      <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
+                      <p className="font-bold text-sm">لم يتم العثور على أية طلبات تطابق البحث!</p>
+                      <button
+                        type="button"
+                        onClick={() => setQuickSearchTerm('')}
+                        className="text-xs text-amber-600 underline font-bold"
+                      >
+                        إعادة ضبط البحث
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-800 text-xs font-black border-b border-slate-200">
+                          <th className="p-3">رقم الطلب</th>
+                          <th className="p-3">اسم العميل</th>
+                          <th className="p-3">المبلغ والملفات</th>
+                          <th className="p-3">الدفع والاعتماد</th>
+                          <th className="p-3">إدارة حالة الطلب</th>
+                          <th className="p-3 text-center">إجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-800">
+                        {filtered.map(ord => {
+                          const statusInfo = getStatusBadgeInfo(ord.status);
+
+                          return (
+                            <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
+                              {/* Order ID */}
+                              <td className="p-3 font-mono font-black text-amber-950 text-xs whitespace-nowrap">
+                                <span className="bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                                  #{ord.id}
+                                </span>
+                              </td>
+
+                              {/* Customer Name */}
+                              <td className="p-3 font-black text-slate-900 text-xs sm:text-sm">
+                                {ord.customerName}
+                              </td>
+
+                              {/* Amount & Files */}
+                              <td className="p-3 whitespace-nowrap">
+                                <div className="font-black text-emerald-800 font-mono text-xs sm:text-sm">
+                                  {formatSDG(ord.totalAmount)}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono">
+                                  ({ord.files ? ord.files.length : 0} ملف - {ord.totalPages || 0} ص)
+                                </div>
+                              </td>
+
+                              {/* Payment Method & Payment Status Toggle */}
+                              <td className="p-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-[11px] text-slate-700">
+                                    {ord.paymentMethod === 'bankak' ? '💳 بنكك' : ord.paymentMethod === 'okash' ? '🔴 أوكاش' : '💵 نقداً'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateOrderStatus(ord.id, ord.status, ord.paymentStatus === 'verified' ? 'failed' : 'verified')}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors border ${
+                                      ord.paymentStatus === 'verified' 
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' 
+                                        : 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                    }`}
+                                    title="انقر لتغيير حالة اعتماد الدفع"
+                                  >
+                                    {ord.paymentStatus === 'verified' ? 'مؤكد ✓' : 'قيد التأكيد ⏳'}
+                                  </button>
+                                </div>
+                              </td>
+
+                              {/* Direct Order Status Management Selector */}
+                              <td className="p-3 whitespace-nowrap">
+                                <select
+                                  value={ord.status}
+                                  onChange={(e) => onUpdateOrderStatus(ord.id, e.target.value as OrderStatus, ord.paymentStatus === 'verified' ? 'verified' : 'failed')}
+                                  className="bg-white border border-slate-300 rounded-xl text-xs font-bold px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 cursor-pointer shadow-sm"
+                                >
+                                  <option value="pending">جديد (في الانتظار)</option>
+                                  <option value="reviewing">جاري المراجعة</option>
+                                  <option value="printing">جاري الطباعة 🖨️</option>
+                                  <option value="packaging">جاري التغليف 📦</option>
+                                  <option value="out_for_delivery">مع المندوب للتوصيل 🛵</option>
+                                  <option value="ready_for_pickup">جاهز للاستلام 🏪</option>
+                                  <option value="completed">تم التسليم بنجاح ✅</option>
+                                  <option value="cancelled">ملغي ❌</option>
+                                </select>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="p-3 whitespace-nowrap text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPrintOrderSlip(ord)}
+                                    className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors border border-slate-300 flex items-center gap-1 font-bold text-[11px] cursor-pointer"
+                                    title="عرض وطباعة إيصال الطلب"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-amber-600" />
+                                    <span>الإيصال</span>
+                                  </button>
+
+                                  {onDeleteOrder && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onDeleteOrder(ord.id);
+                                        addLogEntry(
+                                          'order_deleted',
+                                          `تم حذف الطلب (${ord.id}) التابع للعميل/الطالب "${ord.customerName}" نهائياً من النظام`,
+                                          ord.id,
+                                          ord.customerName
+                                        );
+                                      }}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors border border-rose-200 cursor-pointer"
+                                      title="حذف الطلب"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-700 shrink-0">
+              <div className="flex items-center gap-4 flex-wrap">
+                <span>إجمالي الطلبات: <strong className="text-slate-900 font-mono text-sm">{orders.length} طلب</strong></span>
+                <span>إجمالي المبالغ: <strong className="text-emerald-800 font-mono text-sm">{formatSDG(orders.reduce((sum, o) => sum + o.totalAmount, 0))}</strong></span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowQuickOrdersModal(false)}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                إغلاق النافذة
+              </button>
+            </div>
+
           </div>
         </div>
       )}

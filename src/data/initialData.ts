@@ -1,4 +1,4 @@
-import { PricingRates, StudySheet, PrintOrder, DeliveryZone, Coupon } from '../types';
+import { PricingRates, StudySheet, PrintOrder, DeliveryZone, Coupon, Expense } from '../types';
 
 export const DELIVERY_ZONES: DeliveryZone[] = [
   // --- أمدرمان ---
@@ -891,3 +891,84 @@ export const INITIAL_COUPONS: Coupon[] = [
     createdAt: '2026-08-01T00:00:00Z',
   },
 ];
+
+export const INITIAL_EXPENSES: Expense[] = [
+  {
+    id: 'exp-1',
+    title: 'شراء 5 كراتين ورق A4 (80 جرام)',
+    category: 'raw_materials',
+    amount: 115000,
+    date: '2026-08-01',
+    paymentMethod: 'bankak',
+    paidTo: 'شركة المطبوعات للورق والكرتون',
+    notes: 'توريد ورق طباعة ممتاز للمكتبة',
+    createdAt: '2026-08-01T09:00:00Z',
+  },
+  {
+    id: 'exp-2',
+    title: 'عبوات حبر ماكينات الطباعة كيونيكسيون',
+    category: 'raw_materials',
+    amount: 85000,
+    date: '2026-08-02',
+    paymentMethod: 'bankak',
+    paidTo: 'المركز الهندي لقطع الغيار والأحبار',
+    notes: 'حبر أسود + ألوان للطباعة العالية الدقة',
+    createdAt: '2026-08-02T11:30:00Z',
+  },
+  {
+    id: 'exp-3',
+    title: 'صيانة وتغيير درام الطباعة الدورية',
+    category: 'maintenance',
+    amount: 35000,
+    date: '2026-08-04',
+    paymentMethod: 'cash',
+    paidTo: 'مهندس الصيانة أحمد',
+    notes: 'تنظيف السخانات وضبط التروس',
+    createdAt: '2026-08-04T14:00:00Z',
+  },
+  {
+    id: 'exp-4',
+    title: 'سلك تجليد حلزوني وأغلفة بلاستيكية مقواة',
+    category: 'raw_materials',
+    amount: 28000,
+    date: '2026-08-05',
+    paymentMethod: 'okash',
+    paidTo: 'مكتبة الخرطوم للتجهيزات',
+    notes: 'تجهيز طلبات تجليد الشيتات والمذكرات',
+    createdAt: '2026-08-05T16:20:00Z',
+  },
+  {
+    id: 'exp-5',
+    title: 'فاتورة الكهرباء وشحن باقة الإنترنت الفضائي للمكتبة',
+    category: 'operations',
+    amount: 42000,
+    date: '2026-08-06',
+    paymentMethod: 'bankak',
+    paidTo: 'شركة الهيدرو إلكتريك / سوداني',
+    notes: 'سداد تشغيل الفرع الرئيسي والإنترنت',
+    createdAt: '2026-08-06T10:00:00Z',
+  },
+];
+
+export function getStoredExpenses(): Expense[] {
+  try {
+    const saved = localStorage.getItem('a4_sudan_expenses');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading expenses from localStorage', e);
+  }
+  return INITIAL_EXPENSES;
+}
+
+export function saveStoredExpenses(expenses: Expense[]): void {
+  try {
+    localStorage.setItem('a4_sudan_expenses', JSON.stringify(expenses));
+  } catch (e) {
+    console.error('Error saving expenses to localStorage', e);
+  }
+}
