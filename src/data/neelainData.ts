@@ -13,6 +13,7 @@ export interface UniversityCollege {
   levelsCount: number; // 4 or 5 levels for Bachelor
   degreeType?: 'bachelor' | 'diploma' | 'both';
   departments: CollegeDepartment[];
+  active?: boolean;
 }
 
 export interface UniversityInfo {
@@ -23,6 +24,7 @@ export interface UniversityInfo {
   badge: string;
   collegesCount: number;
   colleges: UniversityCollege[];
+  active?: boolean;
 }
 
 export const NEELAIN_COLLEGES: UniversityCollege[] = [

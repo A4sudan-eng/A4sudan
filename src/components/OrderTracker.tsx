@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { PrintOrder } from '../types';
-import { getStatusBadgeInfo, formatSDG } from '../utils/pricing';
+import { getStatusBadgeInfo, formatSDG, getEstimatedDeliveryText } from '../utils/pricing';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 import { OrderSlipModal } from './OrderSlipModal';
 
@@ -193,7 +193,7 @@ export const OrderTracker: React.FC<OrderTrackerProps> = ({ orders, onRefreshOrd
 ---------------------------------------
 🔖 *رقم الطلب:* #${order.id}
 👤 *اسم العميل:* ${order.customerName}
-📞 *رقم الهاتف:* ${order.customerPhone}
+📞 *رقم الهاتف:* ${order.customerPhone}${order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
 📍 *العنوان/الجامعة:* ${order.addressOrCampus || ''} (${order.city || ''})
 📌 *حالة الطلب:* ${badge.label}
 💳 *طريقة الدفع:* ${payMethodLabel}
@@ -257,7 +257,7 @@ ${filesList}
     const isOwnBrowserOrder =
       isAccountOrder ||
       (myOrderIds.length > 0 && myOrderIds.includes(o.id)) ||
-      (Boolean(myPhone) && o.customerPhone && o.customerPhone.trim() === myPhone);
+      (Boolean(myPhone) && ((o.customerPhone && o.customerPhone.trim() === myPhone) || (o.customerPhone2 && o.customerPhone2.trim() === myPhone)));
 
     // 2. If NO search query is typed: show ONLY orders created on this browser/account
     if (!query) {
@@ -266,6 +266,7 @@ ${filesList}
 
     // 3. If a search query IS typed:
     const cleanPhone = (o.customerPhone || '').replace(/\D/g, '');
+    const cleanPhone2 = (o.customerPhone2 || '').replace(/\D/g, '');
     
     // Check match by Order Code (e.g., A4-SD-9102 or 9102)
     const isMatchId = o.id.toLowerCase() === query || 
@@ -273,8 +274,9 @@ ${filesList}
                        (cleanQuery.length >= 3 && o.id.toLowerCase().includes(cleanQuery));
     
     // Check match by Phone Number (full or substantial phone number)
-    const isMatchPhone = (cleanQuery.length >= 6 && cleanPhone.includes(cleanQuery)) || 
-                         (o.customerPhone && o.customerPhone.trim() === rawQuery);
+    const isMatchPhone = (cleanQuery.length >= 6 && (cleanPhone.includes(cleanQuery) || cleanPhone2.includes(cleanQuery))) || 
+                         (o.customerPhone && o.customerPhone.trim() === rawQuery) ||
+                         (o.customerPhone2 && o.customerPhone2.trim() === rawQuery);
 
     if (isOwnBrowserOrder) {
       // For orders created on this browser/account, allow flexible matching by code, phone, or name
@@ -454,14 +456,14 @@ ${filesList}
                     <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center font-black transition-all shadow-sm ${
                       currentStep >= 4 ? 'bg-teal-600 text-white shadow-teal-200' : 'bg-slate-200 text-slate-400'
                     }`}>
-                      {order.deliveryOption === 'pickup' ? (
+                      {order.deliveryMethod === 'pickup' ? (
                         <Building2 className="w-4 h-4 sm:w-5 sm:h-5" />
                       ) : (
                         <Truck className="w-4 h-4 sm:w-5 sm:h-5" />
                       )}
                     </div>
                     <span className={currentStep >= 4 ? 'text-slate-900 font-black' : 'text-slate-400'}>
-                      {order.deliveryOption === 'pickup' ? 'جاهز بالفرع' : 'مع المندوب'}
+                      {order.deliveryMethod === 'pickup' ? 'جاهز بالفرع' : 'مع المندوب'}
                     </span>
                   </div>
 
@@ -483,16 +485,14 @@ ${filesList}
                     <StatusIcon className="w-5 h-5" />
                   </div>
                   <div className="text-xs leading-relaxed space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <strong className="text-sm font-black">{statusCfg.label}</strong>
                       <span className="text-[11px] font-bold opacity-80">({statusCfg.description})</span>
                     </div>
-                    {order.estimatedCompletionTime && (
-                      <div className="flex items-center gap-1.5 font-bold text-amber-900 mt-1.5 bg-amber-100/90 px-3 py-1 rounded-lg border border-amber-300 w-fit">
-                        <Clock className="w-3.5 h-3.5 text-amber-700" />
-                        <span>موعد التسليم المتوقع المحدد: <strong>{order.estimatedCompletionTime}</strong></span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900 mt-1.5 bg-amber-100/90 px-3 py-1 rounded-lg border border-amber-300 w-fit shadow-2xs">
+                      <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span>موعد التسليم المتوقع: <strong>{getEstimatedDeliveryText(order)}</strong></span>
+                    </div>
                   </div>
                 </div>
 
@@ -514,8 +514,10 @@ ${filesList}
                     </div>
                     <div className="flex items-center gap-2">
                       <Phone className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span className="text-slate-500 font-bold shrink-0">رقم التواصل:</span>
-                      <strong className="text-slate-900 font-mono font-bold">{order.customerPhone}</strong>
+                      <span className="text-slate-500 font-bold shrink-0">أرقام التواصل:</span>
+                      <strong className="text-slate-900 font-mono font-bold">
+                        {order.customerPhone} {order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+                      </strong>
                     </div>
                     <div className="flex items-start gap-2">
                       <MapPin className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
@@ -625,7 +627,7 @@ ${filesList}
                             {file.copies} {file.copies === 1 ? 'نسخة' : 'نسخ'}
                           </span>
                           <span className="bg-slate-100 px-1.5 py-0.5 rounded font-bold text-slate-800">
-                            {file.colorOption === 'color' ? 'ملون 🎨' : 'أسود/أبيض 📑'}
+                            {file.color === 'color' ? 'ملون 🎨' : file.color === 'mixed' ? 'غلاف ألوان / محتوى أسود' : 'أسود/أبيض 📑'}
                           </span>
                           {file.binding !== 'none' && (
                             <span className="bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded font-bold border border-amber-200">

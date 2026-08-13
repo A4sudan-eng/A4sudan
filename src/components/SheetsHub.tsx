@@ -31,7 +31,11 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
       setSudanUnis(getStoredUniversities());
     };
     window.addEventListener('a4_universities_updated', handleUpdate);
-    return () => window.removeEventListener('a4_universities_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('a4_universities_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   // Active View Mode: 'leader' (دليل الليدر والجامعات) OR 'browse' (المكتبة العامة)
@@ -266,10 +270,15 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                 {sudanUnis.map((uni) => {
                   const isNeelain = uni.id === 'neelain';
+                  const isUnavailable = uni.active === false || uni.badge === 'غير متاح الان' || uni.badge?.includes('غير متاح');
                   return (
                     <div 
                       key={uni.id}
                       onClick={() => {
+                        if (isUnavailable) {
+                          alert(`عذراً، خدمات الشيتات والمكتبة غير متاحة حالياً بـ (${uni.name}).`);
+                          return;
+                        }
                         setSelectedUni(uni.name);
                         const firstCol = uni.colleges[0];
                         if (firstCol) {
@@ -278,37 +287,57 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                         }
                         setLeaderStep('colleges');
                       }}
-                      className={`rounded-xl p-4 shadow-sm border transition-all cursor-pointer group flex flex-col justify-between space-y-3 relative overflow-hidden ${
-                        isNeelain 
-                          ? 'bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-md ring-1 ring-amber-400/30' 
-                          : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 hover:border-amber-400'
+                      className={`rounded-xl p-4 shadow-sm border transition-all flex flex-col justify-between space-y-3 relative overflow-hidden ${
+                        isUnavailable
+                          ? 'opacity-40 grayscale-[60%] cursor-not-allowed bg-slate-800 text-slate-300 border-rose-500/50 hover:border-rose-500'
+                          : isNeelain 
+                            ? 'bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-md ring-1 ring-amber-400/30 cursor-pointer group hover:border-amber-300' 
+                            : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 cursor-pointer group hover:border-amber-400'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center text-amber-300 font-bold shrink-0 border border-emerald-400/30">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shrink-0 border ${
+                            isUnavailable ? 'bg-rose-950/50 text-rose-300 border-rose-700/50' : 'bg-white/10 text-amber-300 border-emerald-400/30'
+                          }`}>
                             {isNeelain ? (
                               <img src={neelainLogo} alt="جامعة النيلين" className="w-full h-full object-contain p-0.5 rounded-lg" />
                             ) : (
-                              <Building2 className="w-5 h-5 text-amber-300" />
+                              <Building2 className={`w-5 h-5 ${isUnavailable ? 'text-rose-300' : 'text-amber-300'}`} />
                             )}
                           </div>
-                          <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs">
-                            {uni.badge || 'متوفرة حالياً ✓'}
+                          <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs ${
+                            isUnavailable
+                              ? 'bg-rose-600 text-white border border-rose-400'
+                              : 'bg-amber-400 text-slate-950'
+                          }`}>
+                            {isUnavailable ? 'غير متاح الان' : (uni.badge || 'متوفرة حالياً ✓')}
                           </span>
                         </div>
 
-                        <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
+                        <h3 className={`text-base font-black transition-colors ${
+                          isUnavailable ? 'text-slate-300 line-through' : 'text-white group-hover:text-amber-300'
+                        }`}>
                           {uni.name}
                         </h3>
-                        <p className="text-[11px] text-emerald-200/90 leading-tight mt-1">
-                          {uni.description}
+                        <p className={`text-[11px] leading-tight mt-1 ${isUnavailable ? 'text-slate-400' : 'text-emerald-200/90'}`}>
+                          {isUnavailable ? 'هذه الجامعة غير متاحة حالياً لطلبات الشيتات وطباعة المقررات.' : uni.description}
                         </p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2.5 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                        <span>عرض الكليات ({uni.collegesCount})</span>
-                        <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                      <div className={`flex items-center justify-between pt-2.5 border-t text-[11px] font-bold ${
+                        isUnavailable ? 'border-rose-900/50 text-rose-300' : 'border-emerald-800/80 text-emerald-300'
+                      }`}>
+                        {isUnavailable ? (
+                          <span className="text-rose-300 font-extrabold flex items-center gap-1">
+                            🚫 غير متاحة (مغلقة)
+                          </span>
+                        ) : (
+                          <>
+                            <span>عرض الكليات ({uni.collegesCount})</span>
+                            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -386,71 +415,101 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                     return true;
                   })
                   .map((col) => {
-                  const isCommerce = col.id === 'commerce';
-                  return (
-                    <div 
-                      key={col.id}
-                      onClick={() => {
-                        setSelectedCollege(col.name);
-                        setSelectedLeaderDept(col.departments[0]?.name || null);
-                        setLeaderStep('departments');
-                      }}
-                      className={`rounded-xl p-4 shadow-sm border transition-all cursor-pointer group flex flex-col justify-between space-y-3 relative overflow-hidden ${
-                        isCommerce 
-                          ? 'bg-gradient-to-br from-amber-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-lg shadow-amber-400/10 ring-2 ring-amber-400/20 sm:col-span-2' 
-                          : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 hover:border-amber-400'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2 pt-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs ${
-                              isCommerce ? 'bg-amber-400 text-slate-950 animate-pulse' : 'bg-emerald-800 text-emerald-100'
-                            }`}>
-                              {col.badge || 'معتمدة'}
-                            </span>
+                    const isCommerce = col.id === 'commerce';
+                    const isCollegeUnavailable = col.active === false || currentUniObj?.active === false;
 
-                            {col.degreeType === 'diploma' && (
-                              <span className="bg-purple-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
-                                📜 دبلوم تقني
+                    return (
+                      <div 
+                        key={col.id}
+                        onClick={() => {
+                          if (isCollegeUnavailable) {
+                            alert(`عذراً، هذه الكلية (${col.name}) غير متاحة الآن.`);
+                            return;
+                          }
+                          setSelectedCollege(col.name);
+                          setSelectedLeaderDept(col.departments[0]?.name || null);
+                          setLeaderStep('departments');
+                        }}
+                        className={`rounded-xl p-4 shadow-sm border transition-all flex flex-col justify-between space-y-3 relative overflow-hidden ${
+                          isCollegeUnavailable
+                            ? 'opacity-40 grayscale-[60%] cursor-not-allowed bg-slate-800 text-slate-300 border-rose-500/50 hover:border-rose-500'
+                            : isCommerce 
+                              ? 'bg-gradient-to-br from-amber-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-lg shadow-amber-400/10 ring-2 ring-amber-400/20 sm:col-span-2 cursor-pointer group' 
+                              : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 hover:border-amber-400 cursor-pointer group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2 pt-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs ${
+                                isCollegeUnavailable
+                                  ? 'bg-rose-600 text-white border border-rose-400'
+                                  : isCommerce 
+                                    ? 'bg-amber-400 text-slate-950 animate-pulse' 
+                                    : 'bg-emerald-800 text-emerald-100'
+                              }`}>
+                                {isCollegeUnavailable ? 'غير متاح الان' : (col.badge || 'معتمدة')}
                               </span>
-                            )}
-                            {col.degreeType === 'both' && (
-                              <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
-                                🎓📜 بكالوريوس + دبلوم
-                              </span>
-                            )}
-                            {(col.degreeType === 'bachelor' || !col.degreeType) && (
-                              <span className="bg-emerald-700 text-emerald-100 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                                🎓 بكالوريوس
-                              </span>
-                            )}
+
+                              {col.degreeType === 'diploma' && (
+                                <span className="bg-purple-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
+                                  📜 دبلوم تقني
+                                </span>
+                              )}
+                              {col.degreeType === 'both' && (
+                                <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
+                                  🎓📜 بكالوريوس + دبلوم
+                                </span>
+                              )}
+                              {(col.degreeType === 'bachelor' || !col.degreeType) && (
+                                <span className="bg-emerald-700 text-emerald-100 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                  🎓 بكالوريوس
+                                </span>
+                              )}
+                            </div>
+
+                            <span className={`font-bold text-[11px] ${isCollegeUnavailable ? 'text-rose-300' : 'text-amber-300'}`}>
+                              {col.departments.length} أقسام تخصصية
+                            </span>
                           </div>
 
-                          <span className="text-amber-300 font-bold text-[11px]">
-                            {col.departments.length} أقسام تخصصية
-                          </span>
+                          <h3 className={`font-black transition-colors ${
+                            isCollegeUnavailable
+                              ? 'text-lg sm:text-xl text-slate-300 line-through'
+                              : isCommerce 
+                                ? 'text-xl sm:text-2xl text-amber-300 group-hover:text-amber-200' 
+                                : 'text-lg sm:text-xl text-white group-hover:text-amber-300'
+                          }`}>
+                            <span>{col.name}</span>
+                          </h3>
+                          {col.description && (
+                            <p className={`text-xs mt-1 line-clamp-2 ${isCollegeUnavailable ? 'text-slate-400' : 'text-emerald-200/90'}`}>
+                              {isCollegeUnavailable ? 'خدمات المذكرات والشيتات متوقفة حالياً لهذه الكلية.' : col.description}
+                            </p>
+                          )}
                         </div>
 
-                        <h3 className={`font-black group-hover:text-amber-300 transition-colors ${
-                          isCommerce ? 'text-xl sm:text-2xl text-amber-300' : 'text-lg sm:text-xl text-white'
+                        <div className={`flex items-center justify-between pt-2.5 border-t text-xs font-bold ${
+                          isCollegeUnavailable
+                            ? 'border-rose-900/50 text-rose-300'
+                            : isCommerce 
+                              ? 'border-amber-400/40 text-amber-300' 
+                              : 'border-emerald-800/80 text-emerald-300'
                         }`}>
-                          <span>{col.name}</span>
-                        </h3>
-                        {col.description && (
-                          <p className="text-xs text-emerald-200/90 mt-1 line-clamp-2">{col.description}</p>
-                        )}
+                          {isCollegeUnavailable ? (
+                            <span className="text-rose-300 font-extrabold flex items-center gap-1">
+                              🚫 غير متاح الان (مغلقة)
+                            </span>
+                          ) : (
+                            <>
+                              <span>تصفح أقسام {col.name}</span>
+                              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                            </>
+                          )}
+                        </div>
                       </div>
-
-                      <div className={`flex items-center justify-between pt-2.5 border-t text-xs font-bold ${
-                        isCommerce ? 'border-amber-400/40 text-amber-300' : 'border-emerald-800/80 text-emerald-300'
-                      }`}>
-                        <span>تصفح أقسام {col.name}</span>
-                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
           )}

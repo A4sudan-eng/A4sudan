@@ -755,6 +755,7 @@ export const INITIAL_ORDERS: PrintOrder[] = [
     id: 'A4-SD-9102',
     customerName: 'محمد أحمد هارون',
     customerPhone: '0912345678',
+    customerPhone2: '0112345679',
     customerEmail: 'm.ahmed@gmail.com',
     deliveryMethod: 'delivery',
     city: 'الخرطوم',
@@ -793,6 +794,7 @@ export const INITIAL_ORDERS: PrintOrder[] = [
     id: 'A4-SD-8821',
     customerName: 'فاطمة الزهراء علي',
     customerPhone: '0123987654',
+    customerPhone2: '0987654321',
     deliveryMethod: 'pickup',
     city: 'أم درمان',
     addressOrCampus: 'فرع المكتبة - أم درمان الثورة',
@@ -829,6 +831,7 @@ export const INITIAL_ORDERS: PrintOrder[] = [
     id: 'A4-SD-7710',
     customerName: 'عثمان عبد الله',
     customerPhone: '0901122334',
+    customerPhone2: '0101122335',
     deliveryMethod: 'delivery',
     city: 'بورتسودان',
     addressOrCampus: 'حي السكة حديد - بالقرب من المستشفى',
@@ -970,5 +973,63 @@ export function saveStoredExpenses(expenses: Expense[]): void {
     localStorage.setItem('a4_sudan_expenses', JSON.stringify(expenses));
   } catch (e) {
     console.error('Error saving expenses to localStorage', e);
+  }
+}
+
+export function getStoredOrders(): PrintOrder[] {
+  try {
+    const saved = localStorage.getItem('a4_orders');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading orders from localStorage', e);
+  }
+  return INITIAL_ORDERS;
+}
+
+export function saveStoredOrders(orders: PrintOrder[]): void {
+  try {
+    localStorage.setItem('a4_orders', JSON.stringify(orders));
+  } catch (e) {
+    console.error('Error saving orders to localStorage', e);
+  }
+}
+
+export function getStoredDeletedOrders(): PrintOrder[] {
+  try {
+    const saved = localStorage.getItem('a4_sudan_deleted_orders');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        // Keep only items deleted within the last 30 days
+        const validDeleted = parsed.filter((item: PrintOrder) => {
+          if (!item.deletedAt) return false;
+          const deletedTime = new Date(item.deletedAt).getTime();
+          return !isNaN(deletedTime) && (now - deletedTime) <= thirtyDaysMs;
+        });
+
+        if (validDeleted.length !== parsed.length) {
+          saveStoredDeletedOrders(validDeleted);
+        }
+        return validDeleted;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading deleted orders from localStorage', e);
+  }
+  return [];
+}
+
+export function saveStoredDeletedOrders(orders: PrintOrder[]): void {
+  try {
+    localStorage.setItem('a4_sudan_deleted_orders', JSON.stringify(orders));
+  } catch (e) {
+    console.error('Error saving deleted orders to localStorage', e);
   }
 }

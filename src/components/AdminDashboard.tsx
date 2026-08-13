@@ -4,14 +4,14 @@ import {
   Clock, Edit3, Save, RefreshCw, Eye, FileText, Phone, MapPin, CreditCard, Filter,
   Lock, KeyRound, Search, Trash2, LogOut, AlertCircle, FileCheck, Camera, Image as ImageIcon, X, Download, FileSpreadsheet, ExternalLink,
   BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle, FolderTree,
-  ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle
+  ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle, RotateCcw
 } from 'lucide-react';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
 import fawryLogo from '../assets/images/fawry_logo_1786006099638.jpg';
 import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog, Expense } from '../types';
-import { getStatusBadgeInfo, formatSDG, calculateFilePrice } from '../utils/pricing';
-import { DEFAULT_PRICING_RATES, getStoredExpenses, saveStoredExpenses } from '../data/initialData';
+import { getStatusBadgeInfo, formatSDG, calculateFilePrice, getEstimatedDeliveryText } from '../utils/pricing';
+import { DEFAULT_PRICING_RATES, getStoredExpenses, saveStoredExpenses, getStoredDeletedOrders, saveStoredDeletedOrders, getStoredOrders, saveStoredOrders } from '../data/initialData';
 import { 
   NEELAIN_COLLEGES, 
   SUDAN_UNIVERSITIES, 
@@ -28,7 +28,7 @@ interface AdminDashboardProps {
   rates: PricingRates;
   sheets: StudySheet[];
   coupons?: Coupon[];
-  onUpdateOrderStatus: (orderId: string, status: OrderStatus, paymentStatus?: 'verified' | 'failed') => void;
+  onUpdateOrderStatus: (orderId: string, status: OrderStatus, paymentStatus?: 'verified' | 'failed', estimatedCompletionTime?: string) => void;
   onDeleteOrder?: (orderId: string) => void;
   onUpdateRates: (newRates: PricingRates) => void;
   onAddSheet: (sheet: StudySheet) => void;
@@ -90,6 +90,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   } | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
+  const [editingDeliveryTimes, setEditingDeliveryTimes] = useState<Record<string, string>>({});
+  const [savedTimeFeedback, setSavedTimeFeedback] = useState<Record<string, boolean>>({});
 
   const getDownloadableDocumentUrl = (f: { fileName: string; previewUrl?: string; pageCount: number; color: string; sides: string; binding: string; copies: number; notes?: string; pagesPerSheet?: number }, orderId?: string) => {
     if (f.previewUrl && f.previewUrl.trim().length > 0) {
@@ -134,12 +136,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Dashboard Tab & Filter States
-  const [activeTab, setActiveTab] = useState<'orders' | 'financials' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs' | 'universities'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'financials' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs' | 'universities' | 'trash'>('orders');
   const [financialSubTab, setFinancialSubTab] = useState<'sales' | 'expenses' | 'profit_loss'>('sales');
+  const [showOrdersMenu, setShowOrdersMenu] = useState(false);
   const [showFinancialsMenu, setShowFinancialsMenu] = useState(false);
   const [showSheetsUniMenu, setShowSheetsUniMenu] = useState(false);
   const [showQuickOrdersModal, setShowQuickOrdersModal] = useState(false);
   const [quickSearchTerm, setQuickSearchTerm] = useState('');
+
+  // Trash PIN protection state (PIN: 1212)
+  const [isTrashUnlocked, setIsTrashUnlocked] = useState(false);
+  const [showTrashPinModal, setShowTrashPinModal] = useState(false);
+  const [trashPinInput, setTrashPinInput] = useState('');
+  const [trashPinError, setTrashPinError] = useState('');
+
+  // Reusable custom confirmation modal & toast state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    type: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'تأكيد',
+    cancelText: 'إلغاء',
+    type: 'danger',
+    onConfirm: () => {},
+  });
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
+  const handleOpenTrash = () => {
+    setShowOrdersMenu(false);
+    if (isTrashUnlocked) {
+      setActiveTab('trash');
+    } else {
+      setTrashPinInput('');
+      setTrashPinError('');
+      setShowTrashPinModal(true);
+    }
+  };
+
+  const handleUnlockTrash = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (trashPinInput.trim() === '1212') {
+      setIsTrashUnlocked(true);
+      setShowTrashPinModal(false);
+      setTrashPinError('');
+      setActiveTab('trash');
+    } else {
+      setTrashPinError('رمز الدخول السري غير صحيح! يرجى إدخال الرمز الصحيح.');
+    }
+  };
 
   const handlePrintQuickOrders = () => {
     const filtered = orders.filter(ord => {
@@ -439,23 +499,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setExpAmount('');
     setExpPaidTo('');
     setExpNotes('');
-    alert('تم تسجيل المنصرف بنجاح! ✓');
+    triggerToast('تم تسجيل المنصرف بنجاح! ✓');
   };
 
   const handleDeleteExpense = (id: string) => {
-    if (confirm('هل أنت تأكد من رغبتك في حذف هذا المنصرف؟')) {
-      const target = expenses.find(x => x.id === id);
-      const updated = expenses.filter(x => x.id !== id);
-      setExpenses(updated);
-      saveStoredExpenses(updated);
-      if (target) {
+    const target = expenses.find(x => x.id === id);
+    if (!target) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: '🗑️ حذف منصرف مالياتي',
+      message: `هل أنت متأكد من رغبتك في حذف هذا المنصرف (${target.title}) بقيمة ${formatSDG(target.amount)}؟`,
+      confirmText: 'نعم، حذف',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        const updated = expenses.filter(x => x.id !== id);
+        setExpenses(updated);
+        saveStoredExpenses(updated);
+        triggerToast(`تم حذف المنصرف (${target.title}) بنجاح`);
         addLogEntry(
           'expense_deleted',
           `تم حذف المنصرف بقيمة ${formatSDG(target.amount)} - (${target.title})`
         );
-      }
-    }
+      },
+    });
   };
+
+  // Deleted Orders (Recycle Bin) State
+  const [deletedOrdersList, setDeletedOrdersList] = useState<PrintOrder[]>(() => getStoredDeletedOrders());
 
   // Universities Management State
   const [universitiesList, setUniversitiesList] = useState<UniversityInfo[]>(() => getStoredUniversities());
@@ -621,41 +692,120 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     saveStoredUniversities(updated);
     addLogEntry('sheet_added', `تمت إضافة/تحديث بيانات الجامعة [${uniFormName.trim()}] والكلية [${collegeFormName.trim() || 'العامة'}] والمستويات (${collegeFormLevels} مستويات) وتحديث المكتبة تلقائياً.`);
     setShowUniModal(false);
-    alert(`تم حفظ وتحديث بيانات (${uniFormName.trim()}) وربطها بالمكتبة تلقائياً بنجاح! 🎉`);
+    triggerToast(`تم حفظ وتحديث بيانات (${uniFormName.trim()}) وربطها بالمكتبة تلقائياً بنجاح! 🎉`);
   };
 
   const handleDeleteUniversity = (uniId: string, uniName: string) => {
-    if (window.confirm(`هل أنت متاكد من حذف (${uniName}) بالكامل من المكتبة والموقع؟`)) {
-      const updated = universitiesList.filter(u => u.id !== uniId);
-      setUniversitiesList(updated);
-      saveStoredUniversities(updated);
-      addLogEntry('order_deleted', `تم حذف الجامعة [${uniName}] بالكامل من المكتبة.`);
-      alert(`تم حذف (${uniName}) بنجاح.`);
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '🗑️ حذف جامعة من المكتبة',
+      message: `هل أنت متأكد من حذف (${uniName}) بالكامل من المكتبة والموقع؟`,
+      confirmText: 'نعم، حذف الجامعة',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        const updated = universitiesList.filter(u => u.id !== uniId);
+        setUniversitiesList(updated);
+        saveStoredUniversities(updated);
+        addLogEntry('order_deleted', `تم حذف الجامعة [${uniName}] بالكامل من المكتبة.`);
+        triggerToast(`تم حذف (${uniName}) بنجاح`);
+      },
+    });
   };
 
   const handleDeleteCollege = (uniId: string, collegeId: string, collegeName: string) => {
-    if (window.confirm(`هل أنت متاكد من حذف كلية (${collegeName})؟`)) {
-      const updated = universitiesList.map(u => {
-        if (u.id === uniId) {
-          const cols = u.colleges.filter(c => c.id !== collegeId);
-          return { ...u, collegesCount: cols.length, colleges: cols };
-        }
-        return u;
-      });
-      setUniversitiesList(updated);
-      saveStoredUniversities(updated);
-      addLogEntry('order_deleted', `تم حذف كلية [${collegeName}] من المكتبة.`);
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '🗑️ حذف كلية',
+      message: `هل أنت متأكد من حذف كلية (${collegeName})؟`,
+      confirmText: 'نعم، حذف الكلية',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        const updated = universitiesList.map(u => {
+          if (u.id === uniId) {
+            const cols = u.colleges.filter(c => c.id !== collegeId);
+            return { ...u, collegesCount: cols.length, colleges: cols };
+          }
+          return u;
+        });
+        setUniversitiesList(updated);
+        saveStoredUniversities(updated);
+        addLogEntry('order_deleted', `تم حذف كلية [${collegeName}] من المكتبة.`);
+        triggerToast(`تم حذف كلية (${collegeName}) بنجاح`);
+      },
+    });
   };
 
   const handleResetUniversitiesDefault = () => {
-    if (window.confirm('هل أنت متاكد من إعادة ضبط الجامعات والكليات للوضع الافتراضي؟')) {
-      setUniversitiesList(SUDAN_UNIVERSITIES);
-      saveStoredUniversities(SUDAN_UNIVERSITIES);
-      addLogEntry('pricing_updated', 'تمت إعادة ضبط قائمة الجامعات والكليات إلى الوضع الافتراضي.');
-      alert('تمت إعادة ضبط قائمة الجامعات والكليات بنجاح!');
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '🔄 إعادة ضبط الجامعات',
+      message: 'هل أنت متأكد من إعادة ضبط قائمة الجامعات والكليات إلى الوضع الافتراضي؟',
+      confirmText: 'نعم، إعادة الضبط',
+      cancelText: 'إلغاء',
+      type: 'warning',
+      onConfirm: () => {
+        setUniversitiesList(SUDAN_UNIVERSITIES);
+        saveStoredUniversities(SUDAN_UNIVERSITIES);
+        addLogEntry('pricing_updated', 'تمت إعادة ضبط قائمة الجامعات والكليات إلى الوضع الافتراضي.');
+        triggerToast('تمت إعادة ضبط قائمة الجامعات والكليات بنجاح!');
+      },
+    });
+  };
+
+  const handleToggleUniversityActive = (uniId: string) => {
+    const targetUni = universitiesList.find(u => u.id === uniId);
+    if (!targetUni) return;
+
+    const isCurrentlyActive = targetUni.active !== false;
+    const nextActive = !isCurrentlyActive;
+
+    const updated = universitiesList.map(u => {
+      if (u.id === uniId) {
+        return {
+          ...u,
+          active: nextActive,
+          badge: nextActive ? 'متاحة الآن ✓' : 'غير متاح الان',
+        };
+      }
+      return u;
+    });
+
+    setUniversitiesList(updated);
+    saveStoredUniversities(updated);
+    addLogEntry(
+      'pricing_updated',
+      `تم تغيير حالة إتاحة جامعة [${targetUni.name}] إلى: (${nextActive ? 'متاحة للطلاب ON 🟢' : 'غير متاح الان OFF 🔴'}).`
+    );
+  };
+
+  const handleToggleCollegeActive = (uniId: string, collegeId: string, collegeName: string) => {
+    const targetUni = universitiesList.find(u => u.id === uniId);
+    if (!targetUni) return;
+
+    const updated = universitiesList.map(u => {
+      if (u.id === uniId) {
+        return {
+          ...u,
+          colleges: u.colleges.map(c => {
+            if (c.id === collegeId || c.name === collegeName) {
+              const isCurrentlyActive = c.active !== false;
+              return { ...c, active: !isCurrentlyActive };
+            }
+            return c;
+          }),
+        };
+      }
+      return u;
+    });
+
+    setUniversitiesList(updated);
+    saveStoredUniversities(updated);
+    addLogEntry(
+      'pricing_updated',
+      `تم تغيير حالة إتاحة كلية [${collegeName}] بـ [${targetUni.name}].`
+    );
   };
 
   // Activity Log State & Initial Sample Logs
@@ -761,12 +911,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
 
   const handleClearActivityLogs = () => {
-    if (window.confirm('هل أنت متاكد من مسح كافة سجلات النشاط الإداري؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      setActivityLogs([]);
-      try {
-        localStorage.removeItem('a4_activity_logs');
-      } catch (e) {}
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '🧹 مسح سجل النشاط الإداري',
+      message: 'هل أنت متأكد من مسح كافة سجلات النشاط الإداري؟ لا يمكن التراجع عن هذا الإجراء.',
+      confirmText: 'نعم، مسح السجلات',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        setActivityLogs([]);
+        try {
+          localStorage.removeItem('a4_activity_logs');
+        } catch (e) {}
+        triggerToast('تم مسح سجل النشاط الإداري بنجاح 🧹');
+      },
+    });
   };
 
   const handleExportActivityLogsCSV = () => {
@@ -1425,7 +1584,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const matchName = (o.customerName || '').toLowerCase().includes(q);
-      const matchPhone = (o.customerPhone || '').toLowerCase().includes(q);
+      const matchPhone = (o.customerPhone || '').toLowerCase().includes(q) || (o.customerPhone2 || '').toLowerCase().includes(q);
       const matchId = (o.id || '').toLowerCase().includes(q);
       const matchCity = (o.city || '').toLowerCase().includes(q);
       return matchName || matchPhone || matchId || matchCity;
@@ -1445,6 +1604,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
+  const handleDeliveryTimeTextChange = (orderId: string, val: string) => {
+    setEditingDeliveryTimes(prev => ({ ...prev, [orderId]: val }));
+  };
+
+  const handleSaveDeliveryTime = (order: PrintOrder, overrideTime?: string) => {
+    const currentEdited = editingDeliveryTimes[order.id];
+    const timeToSave = overrideTime !== undefined 
+      ? overrideTime 
+      : (currentEdited !== undefined ? currentEdited : (order.estimatedCompletionTime || getEstimatedDeliveryText(order)));
+
+    setEditingDeliveryTimes(prev => ({ ...prev, [order.id]: timeToSave }));
+
+    // Update via parent prop
+    onUpdateOrderStatus(order.id, order.status, order.paymentStatus === 'verified' ? 'verified' : undefined, timeToSave);
+
+    // Show temporary "تم الحفظ ✓" feedback
+    setSavedTimeFeedback(prev => ({ ...prev, [order.id]: true }));
+    setTimeout(() => {
+      setSavedTimeFeedback(prev => ({ ...prev, [order.id]: false }));
+    }, 2000);
+
+    addLogEntry(
+      'status_change',
+      `تم تحديد الموعد المتوقع لتسليم طلب (${order.id}) للعميل/الطالب "${order.customerName}" إلى: "${timeToSave}"`,
+      order.id,
+      order.customerName
+    );
+  };
+
   const handleAdminVerifyPayment = (order: PrintOrder) => {
     onUpdateOrderStatus(order.id, order.status, 'verified');
     addLogEntry(
@@ -1456,15 +1644,126 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleDelete = (orderId: string, customerName: string) => {
-    if (onDeleteOrder) {
-      onDeleteOrder(orderId);
-      addLogEntry(
-        'order_deleted',
-        `تم حذف الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" نهائياً من النظام`,
-        orderId,
-        customerName
-      );
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: '⚠️ استئذان وتأكيد نقل الطلب للسلة',
+      message: `بعد إذنك، هل أنت متأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" ونقله إلى سلة المحذوفات؟ سيتم اعتماد وتوثيق كافة السعر والبيانات والملفات بالسلة.`,
+      confirmText: 'نعم، نقل إلى السلة 🗑️',
+      cancelText: 'تراجع وإلغاء ❌',
+      type: 'danger',
+      onConfirm: () => {
+        let targetOrder = orders.find(o => o.id === orderId);
+        if (!targetOrder) {
+          const stored = getStoredOrders();
+          targetOrder = stored.find(o => o.id === orderId);
+        }
+
+        if (targetOrder) {
+          const deletedOrder: PrintOrder = {
+            ...targetOrder,
+            deletedAt: new Date().toISOString(),
+          };
+          const updatedDeleted = [deletedOrder, ...deletedOrdersList.filter(o => o.id !== orderId)];
+          setDeletedOrdersList(updatedDeleted);
+          saveStoredDeletedOrders(updatedDeleted);
+        }
+
+        if (onDeleteOrder) {
+          onDeleteOrder(orderId);
+        }
+
+        triggerToast(`تم نقل الطلب (#${orderId}) للعميل "${customerName}" إلى سلة المحذوفات بنجاح 🗑️`);
+
+        addLogEntry(
+          'order_deleted',
+          `تم نقل الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" إلى سلة المحذوفات مع اعتماد وسجل السعر والبيانات بالكامل 🗑️`,
+          orderId,
+          customerName
+        );
+      },
+    });
+  };
+
+  const handleRestoreOrderFromTrash = (deletedOrder: PrintOrder) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '🔄 استرجاع الطلب إلى القائمة الحالية',
+      message: `هل تريد استرجاع الطلب (#${deletedOrder.id}) للعميل "${deletedOrder.customerName}" إلى قائمة الطلبات؟`,
+      confirmText: 'نعم، استرجاع الطلب 🔄',
+      cancelText: 'إلغاء ❌',
+      type: 'info',
+      onConfirm: () => {
+        const updatedDeleted = deletedOrdersList.filter(o => o.id !== deletedOrder.id);
+        setDeletedOrdersList(updatedDeleted);
+        saveStoredDeletedOrders(updatedDeleted);
+
+        const restoredOrder: PrintOrder = { ...deletedOrder };
+        delete restoredOrder.deletedAt;
+
+        const currentOrders = getStoredOrders();
+        const updatedOrders = [restoredOrder, ...currentOrders.filter(o => o.id !== restoredOrder.id)];
+        saveStoredOrders(updatedOrders);
+
+        window.dispatchEvent(new Event('a4_orders_updated'));
+        if (onRefreshOrders) {
+          onRefreshOrders();
+        }
+
+        triggerToast(`تم استرجاع الطلب (#${deletedOrder.id}) للعميل "${deletedOrder.customerName}" بنجاح 🟢`);
+
+        addLogEntry(
+          'status_change',
+          `تم استرجاع الطلب (${deletedOrder.id}) التابع للعميل "${deletedOrder.customerName}" من سلة المحذوفات إلى قائمة الطلبات الحالية 🟢`,
+          deletedOrder.id,
+          deletedOrder.customerName
+        );
+      },
+    });
+  };
+
+  const handlePermanentDeleteOrder = (orderId: string, customerName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '❌ حذف نهائي من سلة المحذوفات',
+      message: `⚠️ تحذير: هل أنت تأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" نهائياً من سلة المحذوفات؟ لا يمكن الاسترجاع بعد ذلك.`,
+      confirmText: 'نعم، حذف نهائي ❌',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        const updatedDeleted = deletedOrdersList.filter(o => o.id !== orderId);
+        setDeletedOrdersList(updatedDeleted);
+        saveStoredDeletedOrders(updatedDeleted);
+
+        triggerToast(`تم حذف الطلب (#${orderId}) نهائياً من السلة ❌`);
+
+        addLogEntry(
+          'order_deleted',
+          `تم حذف الطلب (${orderId}) التابع للعميل "${customerName}" نهائياً من سلة المحذوفات ❌`,
+          orderId,
+          customerName
+        );
+      },
+    });
+  };
+
+  const handleEmptyTrash = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '🧹 تفريغ سلة المحذوفات بالكامل',
+      message: '⚠️ تحذير مهم: هل أنت متأكد من تفريغ سلة المحذوفات بالكامل؟ سيتم مسح جميع الطلبات المحذوفة نهائياً!',
+      confirmText: 'نعم، تفريغ السلة 🧹',
+      cancelText: 'إلغاء',
+      type: 'danger',
+      onConfirm: () => {
+        setDeletedOrdersList([]);
+        saveStoredDeletedOrders([]);
+        triggerToast('تم تفريغ سلة المحذوفات بالكامل 🧹');
+        addLogEntry(
+          'order_deleted',
+          `تم تفريغ سلة المحذوفات بالكامل لحذف جميع الطلبات المحذوفة نهائياً`
+        );
+      },
+    });
   };
 
   const handleSaveRates = async (e: React.FormEvent) => {
@@ -1590,14 +1889,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <span>تحديث الطلبات</span>
             </button>
           )}
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all ${
-              activeTab === 'orders' ? 'bg-emerald-400 text-emerald-950 shadow-md' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            الطلبات الواردة ({orders.length})
-          </button>
+          {/* Combined Orders & Trash Management Dropdown Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowOrdersMenu(!showOrdersMenu);
+                if (activeTab !== 'orders' && activeTab !== 'trash') {
+                  setActiveTab('orders');
+                }
+              }}
+              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                activeTab === 'orders' || activeTab === 'trash'
+                  ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold'
+                  : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <FileText className="w-4.5 h-4.5 text-amber-900 shrink-0" />
+              <span>إدارة الطلبات</span>
+              <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showOrdersMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Orders Dropdown Menu */}
+            {showOrdersMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowOrdersMenu(false)} />
+                <div className="absolute top-full right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-800 text-[11px] font-bold text-amber-400 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>حدد خيار إدارة الطلبات:</span>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setActiveTab('orders');
+                      setShowOrdersMenu(false);
+                    }}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'orders'
+                        ? 'bg-amber-400 text-amber-950 font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>الطلبات الواردة</span>
+                    </div>
+                    <span className="text-xs bg-slate-800 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-400/30 font-mono font-bold">
+                      {orders.length}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={handleOpenTrash}
+                    className={`w-full text-right px-3.5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                      activeTab === 'trash'
+                        ? 'bg-rose-500 text-white font-black shadow-sm'
+                        : 'text-slate-100 hover:bg-slate-800 hover:text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>سلة المحذوفات {isTrashUnlocked ? '🔓' : '🔒'}</span>
+                    </div>
+                    <span className="text-xs bg-slate-800 text-rose-300 px-2.5 py-0.5 rounded-full border border-rose-400/30 font-mono font-bold">
+                      {deletedOrdersList.length}
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Combined Financials Dropdown Button */}
           <div className="relative">
@@ -1925,6 +2286,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className={`text-xs font-bold px-3.5 py-1.5 rounded-full border ${badge.bgClass} ${badge.textClass}`}>
                         {badge.label}
                       </span>
+                      <span className="text-xs font-bold text-amber-900 bg-amber-50 px-3 py-1 rounded-full border border-amber-300 flex items-center gap-1 shadow-2xs">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>الموعد المتوقع: {getEstimatedDeliveryText(order)}</span>
+                      </span>
                       <span className="text-xs text-slate-500 font-medium dir-ltr">
                         {new Date(order.createdAt).toLocaleDateString('ar-SD')} {new Date(order.createdAt).toLocaleTimeString('ar-SD', { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -1976,8 +2341,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                          <span className="text-slate-500 block font-bold mb-0.5">📞 رقم الهاتف (واتساب):</span>
-                          <strong className="text-slate-900 text-sm font-mono font-black dir-ltr">{order.customerPhone}</strong>
+                          <span className="text-slate-500 block font-bold mb-0.5">📞 أرقام الهاتف (أساسي / احتياطي):</span>
+                          <strong className="text-slate-900 text-sm font-mono font-black dir-ltr block">
+                            {order.customerPhone} {order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+                          </strong>
                         </div>
 
                         <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
@@ -2112,24 +2479,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   </div>
 
-                  {/* Bottom Actions Row: Status Change & Delete Button */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <div className="flex items-center gap-2 text-xs flex-wrap">
-                      <span className="font-bold text-slate-700">تغيير حالة الطلب:</span>
-                      <select
-                        value={order.status}
-                        onChange={e => handleAdminStatusChange(order, e.target.value as OrderStatus)}
-                        className="bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value="pending">جديد / في الانتظار</option>
-                        <option value="reviewing">جاري المراجعة</option>
-                        <option value="printing">قيد الطباعة 🖨️</option>
-                        <option value="packaging">جاري التغليف 📦</option>
-                        <option value="out_for_delivery">مع المندوب للتوصيل 🛵</option>
-                        <option value="ready_for_pickup">جاهز للاستلام 🏪</option>
-                        <option value="completed">مكتمل ومسلم ✅</option>
-                        <option value="cancelled">ملغي ❌</option>
-                      </select>
+                  {/* Bottom Actions Row: Status Change, Editable Time & Delete Button */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 mt-2">
+                    <div className="flex items-center gap-2.5 text-xs flex-wrap">
+                      
+                      {/* Status Selector */}
+                      <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200">
+                        <span className="font-black text-slate-800 shrink-0">تغيير حالة الطلب:</span>
+                        <select
+                          value={order.status}
+                          onChange={e => handleAdminStatusChange(order, e.target.value as OrderStatus)}
+                          className="bg-white border border-slate-300 rounded-lg p-1.5 text-xs text-slate-900 font-bold focus:ring-2 focus:ring-emerald-500 shadow-2xs cursor-pointer"
+                        >
+                          <option value="pending">جديد / في الانتظار</option>
+                          <option value="reviewing">جاري المراجعة</option>
+                          <option value="printing">قيد الطباعة 🖨️</option>
+                          <option value="packaging">جاري التغليف 📦</option>
+                          <option value="out_for_delivery">مع المندوب للتوصيل 🛵</option>
+                          <option value="ready_for_pickup">جاهز للاستلام 🏪</option>
+                          <option value="completed">مكتمل ومسلم ✅</option>
+                          <option value="cancelled">ملغي ❌</option>
+                        </select>
+                      </div>
+
+                      {/* Manual Editable Time Input */}
+                      <div className="flex items-center gap-1.5 bg-amber-50/90 border border-amber-300 p-1.5 rounded-xl text-xs font-bold shadow-2xs flex-wrap">
+                        <Clock className="w-4 h-4 text-amber-700 shrink-0" />
+                        <span className="text-amber-900 font-black shrink-0">الوقت المتوقع للعميل:</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder="أدخل الوقت (مثلاً: خلال 30 دقيقة)"
+                            value={editingDeliveryTimes[order.id] !== undefined ? editingDeliveryTimes[order.id] : (order.estimatedCompletionTime || getEstimatedDeliveryText(order))}
+                            onChange={(e) => handleDeliveryTimeTextChange(order.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleSaveDeliveryTime(order);
+                              }
+                            }}
+                            className="bg-white border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-400 text-amber-950 font-bold text-xs px-2.5 py-1 rounded-lg w-44 sm:w-56 shadow-2xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDeliveryTime(order)}
+                            className="bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer flex items-center gap-1 shadow-2xs shrink-0"
+                            title="حفظ الموعد لتحديده عند العميل"
+                          >
+                            {savedTimeFeedback[order.id] ? (
+                              <span className="text-white font-black">حفظ ✓</span>
+                            ) : (
+                              <span>حفظ 💾</span>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDeliveryTime(order, 'خلال 15 دقيقة')}
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] px-1.5 py-0.5 rounded border border-amber-300 font-bold cursor-pointer transition-colors"
+                            title="تعيين: خلال 15 دقيقة"
+                          >
+                            15د
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDeliveryTime(order, 'خلال 30 دقيقة')}
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] px-1.5 py-0.5 rounded border border-amber-300 font-bold cursor-pointer transition-colors"
+                            title="تعيين: خلال 30 دقيقة"
+                          >
+                            30د
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDeliveryTime(order, 'خلال ساعة')}
+                            className="bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] px-1.5 py-0.5 rounded border border-amber-300 font-bold cursor-pointer transition-colors"
+                            title="تعيين: خلال ساعة"
+                          >
+                            ساعة
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveDeliveryTime(order, 'جاهز للاستلام الآن 🏪')}
+                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-950 text-[10px] px-1.5 py-0.5 rounded border border-emerald-300 font-bold cursor-pointer transition-colors"
+                            title="تعيين: جاهز للاستلام الآن"
+                          >
+                            جاهز الآن
+                          </button>
+                        </div>
+                      </div>
 
                       {order.paymentStatus !== 'verified' && (
                         <button
@@ -3286,9 +3725,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                           <button
                             onClick={() => {
-                              if (window.confirm(`هل أنت تأكد من حذف الشيت "${st.title}" من المكتبة؟`)) {
-                                onDeleteSheet(st.id);
-                              }
+                              setConfirmDialog({
+                                isOpen: true,
+                                title: '🗑️ حذف شيت تعليمي',
+                                message: `هل أنت متأكد من حذف الشيت "${st.title}" من المكتبة؟`,
+                                confirmText: 'نعم، حذف',
+                                cancelText: 'إلغاء',
+                                type: 'danger',
+                                onConfirm: () => {
+                                  onDeleteSheet(st.id);
+                                  triggerToast(`تم حذف الشيت (${st.title}) بنجاح`);
+                                },
+                              });
                             }}
                             className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                             title="حذف الشيت"
@@ -3968,13 +4416,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`هل أنت تأكد من حذف الكوبون "${c.code}"؟`)) {
-                                onDeleteCoupon?.(c.id);
-                                addLogEntry(
-                                  'coupon_deleted',
-                                  `تم حذف كوبون التخفيض [${c.code}] (خصم ${c.discountPercentage}%) من النظام`
-                                );
-                              }
+                              setConfirmDialog({
+                                isOpen: true,
+                                title: '🗑️ حذف كوبون تخفيض',
+                                message: `هل أنت متأكد من حذف الكوبون "${c.code}"؟`,
+                                confirmText: 'نعم، حذف',
+                                cancelText: 'إلغاء',
+                                type: 'danger',
+                                onConfirm: () => {
+                                  onDeleteCoupon?.(c.id);
+                                  triggerToast(`تم حذف الكوبون [${c.code}] بنجاح`);
+                                  addLogEntry(
+                                    'coupon_deleted',
+                                    `تم حذف كوبون التخفيض [${c.code}] (خصم ${c.discountPercentage}%) من النظام`
+                                  );
+                                },
+                              });
                             }}
                             className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition-colors cursor-pointer"
                             title="حذف الكوبون"
@@ -4208,6 +4665,298 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* RECYCLE BIN / TRASH TAB (سلة المحذوفات للطلبات) */}
+      {activeTab === 'trash' && (
+        <div className="space-y-6">
+          {!isTrashUnlocked ? (
+            /* LOCKED TRASH VIEW */
+            <div className="bg-white p-8 sm:p-12 rounded-3xl border border-slate-200 shadow-sm text-center max-w-md mx-auto space-y-6 my-8">
+              <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-3xl flex items-center justify-center mx-auto shadow-sm ring-8 ring-rose-50">
+                <Lock className="w-10 h-10" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-black text-slate-900">سلة المحذوفات مقفلة 🔒</h3>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  هذا القسم محمي، يرجى إدخال رمز الأمان للوصول إلى الطلبات المحذوفة واسترجاعها
+                </p>
+              </div>
+
+              <form onSubmit={handleUnlockTrash} className="space-y-4 text-right">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">
+                    رمز الدخول السري (PIN Code):
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="w-5 h-5 text-slate-400 absolute right-3.5 top-3.5" />
+                    <input
+                      type="password"
+                      required
+                      autoFocus
+                      value={trashPinInput}
+                      onChange={e => {
+                        setTrashPinInput(e.target.value);
+                        setTrashPinError('');
+                      }}
+                      placeholder="أدخل رمز الأمان..."
+                      className="w-full pr-11 pl-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-mono text-center text-xl text-slate-900 tracking-widest"
+                    />
+                  </div>
+                  {trashPinError && (
+                    <p className="mt-2 text-xs font-bold text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200 flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{trashPinError}</span>
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-3.5 rounded-xl shadow-md transition-all text-sm cursor-pointer flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <ShieldCheck className="w-5 h-5" />
+                  <span>فتح سلة المحذوفات</span>
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* UNLOCKED TRASH CONTENT */
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+              {/* Trash Header */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
+                <div>
+                  <div className="flex items-center gap-2 text-rose-700 font-bold text-xs mb-1">
+                    <Trash2 className="w-4 h-4 text-rose-600" />
+                    <span>سلة المحذوفات للطلبات • 30 Days Retention Policy</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                    <span>🗑️ سلة المحذوفات ({deletedOrdersList.length})</span>
+                    <span className="text-xs font-mono bg-rose-100 text-rose-900 px-3 py-1 rounded-full border border-rose-300 font-bold">
+                      محتفظ بها لمدة 30 يوماً ⏱️
+                    </span>
+                  </h3>
+                  <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                    جميع الطلبات التي تم حذفها تُحفظ هنا لمدة 30 يوماً فقط، ويمكنك استرجاعها بضغطة زر لإعادتها للطلبات الحالية.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTrashUnlocked(false);
+                      setActiveTab('orders');
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-4 py-2.5 rounded-xl text-xs sm:text-sm inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-300"
+                  >
+                    <Lock className="w-4 h-4 text-slate-600" />
+                    <span>إعادة قفل السلة 🔒</span>
+                  </button>
+
+                  {deletedOrdersList.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleEmptyTrash}
+                      className="bg-rose-600 hover:bg-rose-700 text-white font-black px-4 py-2.5 rounded-xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>تفريغ سلة المحذوفات بالكامل 🧹</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 30-Day Auto Purge Warning Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs sm:text-sm font-bold">
+                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span>سياسة الحفظ التلقائي (30 يوماً):</span>
+                  <p className="font-normal text-amber-800 text-xs mt-0.5">
+                    الطلبات في سلة المحذوفات تُحفظ لمدة 30 يوماً فقط من تاريخ نقلها للسهلة، ويقوم النظام بحذفها نهائياً وتلقائياً بعد مرور 30 يوماً إن لم تقم باسترجاعها.
+                  </p>
+                </div>
+              </div>
+
+              {/* Trash Items List */}
+              <div className="space-y-4">
+                {deletedOrdersList.map((order) => {
+                  const isBankak = order.paymentMethod === 'bankak';
+                  const isOkash = order.paymentMethod === 'okash';
+                  const isFawry = order.paymentMethod === 'fawry';
+
+                  // Calculate remaining days
+                  const deletedTime = order.deletedAt ? new Date(order.deletedAt).getTime() : Date.now();
+                  const elapsedDays = Math.floor((Date.now() - deletedTime) / (1000 * 60 * 60 * 24));
+                  const remainingDays = Math.max(0, 30 - elapsedDays);
+
+                  return (
+                    <div 
+                      key={order.id} 
+                      className="bg-slate-50 border border-slate-200 hover:border-rose-300 rounded-2xl p-5 shadow-2xs transition-all space-y-4"
+                    >
+                      {/* Top Header Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-black text-base text-slate-900 bg-slate-200 px-3 py-1 rounded-xl">
+                            #{order.id}
+                          </span>
+                          <div>
+                            <h4 className="font-black text-slate-900 text-base flex items-center gap-2">
+                              <span>{order.customerName}</span>
+                              <a href={`tel:${order.customerPhone}`} className="text-xs font-bold text-emerald-700 hover:underlineDir font-mono">
+                                ({order.customerPhone})
+                              </a>
+                            </h4>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                                <Trash2 className="w-3 h-3" />
+                                <span>تاريخ الحذف: {order.deletedAt ? new Date(order.deletedAt).toLocaleString('ar-SD') : 'غير محدد'}</span>
+                              </span>
+                              <span className="text-[10px] font-black bg-rose-100 text-rose-900 px-2.5 py-0.5 rounded-full border border-rose-300 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-rose-600" />
+                                <span>متبقي بالحذف التلقائي: {remainingDays} يوم</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Price & Payment Summary Badges */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="bg-emerald-600 text-white font-black text-sm px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
+                            <span>السعر:</span>
+                            <span className="font-mono text-base">{formatSDG(order.totalAmount)}</span>
+                          </div>
+                          <span className="text-xs font-bold bg-slate-200 text-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-300">
+                            {isBankak ? '💳 بنكك' : isOkash ? '📱 أوكاش' : isFawry ? '⚡ فوري' : '💵 نقداً'}
+                          </span>
+                          <span className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border ${
+                            order.paymentStatus === 'verified' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'
+                          }`}>
+                            {order.paymentStatus === 'verified' ? 'مؤكد المدفوعات ✅' : 'قيد التدقيق ⏳'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Comprehensive Order Metadata Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+                        {/* Column 1: Financial & Page Counts */}
+                        <div className="space-y-1.5 border-b md:border-b-0 md:border-l border-slate-100 pb-2 md:pb-0 md:pl-3">
+                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
+                            <Coins className="w-3.5 h-3.5 text-amber-600" />
+                            <span>اعتماد السعر والتكاليف:</span>
+                          </p>
+                          <p><span className="font-bold text-slate-700">إجمالي المبلغ:</span> <span className="font-mono font-black text-emerald-700">{formatSDG(order.totalAmount)}</span></p>
+                          <p><span className="font-bold text-slate-700">رسوم التوصيل:</span> <span className="font-mono">{formatSDG(order.deliveryFee || 0)}</span></p>
+                          {order.discount > 0 && (
+                            <p><span className="font-bold text-slate-700">قيمة الخصم:</span> <span className="font-mono text-rose-600">-{formatSDG(order.discount)}</span> ({order.couponCode || 'كوبون'})</p>
+                          )}
+                          <p><span className="font-bold text-slate-700">حجم الطلب:</span> <span className="font-bold text-slate-900">{order.files ? order.files.length : 0} ملفات</span> ({order.totalPages} صفحة إجمالية)</p>
+                        </div>
+
+                        {/* Column 2: Institution & Location */}
+                        <div className="space-y-1.5 border-b md:border-b-0 md:border-l border-slate-100 pb-2 md:pb-0 md:pl-3">
+                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
+                            <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>الجامعة والموقع:</span>
+                          </p>
+                          <p><span className="font-bold text-slate-700">الجامعة/المؤسسة:</span> <span className="font-semibold text-slate-900">{order.institution || 'غير محدد'}</span></p>
+                          {order.specialization && <p><span className="font-bold text-slate-700">التخصص/الكلية:</span> {order.specialization}</p>}
+                          <p><span className="font-bold text-slate-700">طريقة الاستلام:</span> {order.deliveryMethod === 'delivery' ? '🚚 توصيل لموقع العميل' : '🏫 استلام من الفرع'}</p>
+                          <p><span className="font-bold text-slate-700">العنوان:</span> {order.city} - {order.addressOrCampus}</p>
+                        </div>
+
+                        {/* Column 3: Payment & Dates */}
+                        <div className="space-y-1.5">
+                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
+                            <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                            <span>بيانات الدفع والإنشاء:</span>
+                          </p>
+                          <p><span className="font-bold text-slate-700">تاريخ الطلب:</span> <span className="font-mono">{new Date(order.createdAt).toLocaleString('ar-SD')}</span></p>
+                          {order.bankakTransactionId && (
+                            <p><span className="font-bold text-slate-700">رقم الإشعار:</span> <span className="font-mono bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-amber-900 font-bold">{order.bankakTransactionId}</span></p>
+                          )}
+                          <p><span className="font-bold text-slate-700">حالة الطلب السابقة:</span> <span className="font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-800">{order.status}</span></p>
+                        </div>
+                      </div>
+
+                      {/* Files Detailed Breakdown */}
+                      {order.files && order.files.length > 0 && (
+                        <div className="bg-slate-100/80 rounded-xl p-3 border border-slate-200 text-xs space-y-2">
+                          <span className="font-black text-slate-800 block text-[11px]">📄 تفاصيل الملفات والمواصفات ({order.files.length} ملفات):</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {order.files.map((file, idx) => (
+                              <div key={file.id || idx} className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
+                                <div className="flex items-center justify-between font-bold text-slate-900">
+                                  <span className="truncate max-w-[180px]">{file.fileName}</span>
+                                  <span className="text-emerald-700 font-mono text-[11px] font-black">{formatSDG(file.calculatedPrice || 0)}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-600 flex flex-wrap gap-x-2 gap-y-0.5">
+                                  <span>عدد الصفحات: <b>{file.pageCount}</b></span> •
+                                  <span>النسخ: <b>{file.copies}</b></span> •
+                                  <span>اللون: <b>{file.color === 'color' ? 'ألوان 🎨' : file.color === 'mixed' ? 'غلاف ألوان 📑' : 'أبيض وأسود 📄'}</b></span> •
+                                  <span>الوجهين: <b>{file.sides === 'double' ? 'وجهين' : 'وجه واحد'}</b></span> •
+                                  <span>التغليف: <b>{file.binding === 'spiral_plastic' ? 'حلزوني' : file.binding === 'stapled' ? 'كبس' : file.binding === 'hardcover_leather' ? 'غلاف مقوى' : 'بدون'}</b></span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Customer Notes if present */}
+                      {order.notes && (
+                        <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium">
+                          <span className="font-bold">📝 ملاحظات العميل:</span> {order.notes}
+                        </div>
+                      )}
+
+                      {/* Trash Action Buttons */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setPrintOrderSlip(order)}
+                          className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-slate-700" />
+                          <span>معاينة إيصال الطلب 📄</span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreOrderFromTrash(order)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>استرجاع الطلب إلى القائمة الحالية 🔄</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handlePermanentDeleteOrder(order.id, order.customerName)}
+                            className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5 text-rose-600" />
+                            <span>حذف نهائي ❌</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {deletedOrdersList.length === 0 && (
+                  <div className="text-center py-16 bg-slate-50/80 rounded-2xl border border-dashed border-slate-300 space-y-2">
+                    <Trash2 className="w-12 h-12 text-slate-300 mx-auto" />
+                    <p className="text-slate-700 font-black text-base">سلة المحذوفات فارغة حالياً 🎉</p>
+                    <p className="text-slate-500 text-xs">عند حذف أي طلب من قائمة الطلبات، سيتم إرساله هنا مؤقتاً لمدة 30 يوماً لتتمكن من استرجاعه في أي وقت.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* UNIVERSITIES MANAGEMENT TAB (إدارة الجامعات والكليات الربط المباشر بالمكتبة) */}
       {activeTab === 'universities' && (
         <div className="space-y-6">
@@ -4292,146 +5041,222 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Universities Cards Grid */}
             <div className="space-y-6">
-              {universitiesList.map((uni) => (
-                <div 
-                  key={uni.id}
-                  className="bg-white border-2 border-slate-200 rounded-2xl p-5 shadow-2xs hover:border-emerald-300 transition-all space-y-4"
-                >
-                  {/* University Header Row */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-900 text-amber-300 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border border-emerald-700 shadow-xs">
-                        <Building2 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-lg font-black text-slate-900">{uni.name}</h4>
-                          {uni.badge && (
-                            <span className="bg-amber-100 text-amber-950 font-black text-[11px] px-2.5 py-0.5 rounded-full border border-amber-300">
-                              {uni.badge}
-                            </span>
-                          )}
+              {universitiesList.map((uni) => {
+                const isUniActive = uni.active !== false;
+                return (
+                  <div 
+                    key={uni.id}
+                    className={`border-2 rounded-2xl p-5 transition-all space-y-4 ${
+                      isUniActive
+                        ? 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
+                        : 'bg-slate-50/90 border-slate-300 opacity-60 shadow-none'
+                    }`}
+                  >
+                    {/* University Header Row */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border shadow-xs ${
+                          isUniActive ? 'bg-emerald-900 text-amber-300 border-emerald-700' : 'bg-slate-700 text-slate-300 border-slate-600'
+                        }`}>
+                          <Building2 className="w-5 h-5" />
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{uni.description}</p>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-lg font-black text-slate-900">{uni.name}</h4>
+                            <span className={`font-black text-[11px] px-2.5 py-0.5 rounded-full border ${
+                              isUniActive 
+                                ? 'bg-amber-100 text-amber-950 border-amber-300' 
+                                : 'bg-rose-100 text-rose-900 border-rose-300'
+                            }`}>
+                              {isUniActive ? (uni.badge || 'متاحة الآن ✓') : 'غير متاح الان'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{uni.description}</p>
+                        </div>
+                      </div>
+
+                      {/* Uni Action Buttons & ON/OFF Slider Switch */}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        
+                        {/* ON / OFF Toggle Slider Button (زر سحاب اون/اوف) */}
+                        <div className={`flex items-center gap-2.5 p-1.5 px-3 rounded-2xl border transition-colors ${
+                          isUniActive 
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
+                            : 'bg-rose-50 border-rose-300 text-rose-950'
+                        }`}>
+                          <span className="text-xs font-black">
+                            {isUniActive ? 'متاحة (ON)' : 'غير متاح الان (OFF)'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleUniversityActive(uni.id)}
+                            className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                              isUniActive ? 'bg-emerald-600' : 'bg-slate-400'
+                            }`}
+                            title={isUniActive ? 'تعطيل الجامعة (جعله غير متاح)' : 'تفعيل الجامعة (جعله متاح للطلاب)'}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                isUniActive ? 'translate-x-0' : '-translate-x-6'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddUniModal(uni)}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>إضافة كلية</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddUniModal(uni, uni.colleges[0])}
+                          className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUniversity(uni.id, uni.name)}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                          title="حذف الجامعة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
                       </div>
                     </div>
-
-                    {/* Uni Action Buttons */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddUniModal(uni)}
-                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>إضافة كلية</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenAddUniModal(uni, uni.colleges[0])}
-                        className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>تعديل</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteUniversity(uni.id, uni.name)}
-                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                        title="حذف الجامعة"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>حذف</span>
-                      </button>
-                    </div>
-                  </div>
 
                   {/* Colleges inside this university */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                    {uni.colleges.map((col) => (
-                      <div 
-                        key={col.id} 
-                        className="bg-slate-50/80 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between space-y-3"
-                      >
-                        <div>
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                              <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>{col.name}</span>
-                            </h5>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {col.degreeType === 'diploma' && (
-                                <span className="bg-purple-100 text-purple-900 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                  📜 دبلوم
+                    {uni.colleges.map((col) => {
+                      const isColActive = col.active !== false && isUniActive;
+                      return (
+                        <div 
+                          key={col.id} 
+                          className={`border rounded-xl p-3.5 flex flex-col justify-between space-y-3 transition-all ${
+                            isColActive
+                              ? 'bg-slate-50/80 border-slate-200'
+                              : 'bg-slate-100/90 border-slate-300 opacity-65'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                                <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>{col.name}</span>
+                              </h5>
+                              <div className="flex items-center gap-1 shrink-0 flex-wrap">
+                                {col.degreeType === 'diploma' && (
+                                  <span className="bg-purple-100 text-purple-900 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                    📜 دبلوم
+                                  </span>
+                                )}
+                                {col.degreeType === 'both' && (
+                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                    🎓📜 بكالوريوس + دبلوم
+                                  </span>
+                                )}
+                                {(col.degreeType === 'bachelor' || !col.degreeType) && (
+                                  <span className="bg-blue-100 text-blue-900 border border-blue-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                    🎓 بكالوريوس
+                                  </span>
+                                )}
+                                <span className="bg-emerald-100 text-emerald-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                  {col.levelsCount || 4} مستويات
                                 </span>
-                              )}
-                              {col.degreeType === 'both' && (
-                                <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                  🎓📜 بكالوريوس + دبلوم
+                                <span className={`font-black text-[10px] px-2 py-0.5 rounded-full border ${
+                                  isColActive
+                                    ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                    : 'bg-rose-100 text-rose-900 border-rose-300'
+                                }`}>
+                                  {isColActive ? 'متاحة ✓' : 'غير متاح الان'}
                                 </span>
-                              )}
-                              {(col.degreeType === 'bachelor' || !col.degreeType) && (
-                                <span className="bg-blue-100 text-blue-900 border border-blue-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                  🎓 بكالوريوس
+                              </div>
+                            </div>
+                            {col.description && (
+                              <p className="text-xs text-slate-600 line-clamp-2 mb-2">{col.description}</p>
+                            )}
+
+                            {/* Departments Tags */}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {col.departments.map((dept, dIdx) => (
+                                <span 
+                                  key={dIdx} 
+                                  className="bg-white text-slate-800 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-slate-200"
+                                >
+                                  {dept.name}
                                 </span>
-                              )}
-                              <span className="bg-emerald-100 text-emerald-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                                {col.levelsCount || 4} مستويات
-                              </span>
+                              ))}
                             </div>
                           </div>
-                          {col.description && (
-                            <p className="text-xs text-slate-600 line-clamp-2 mb-2">{col.description}</p>
-                          )}
 
-                          {/* Departments Tags */}
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {col.departments.map((dept, dIdx) => (
-                              <span 
-                                key={dIdx} 
-                                className="bg-white text-slate-800 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-slate-200"
+                          {/* College Action Bar with ON/OFF Toggle Slider */}
+                          <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                            <span className="text-slate-500 font-bold text-[11px]">
+                              {col.departments.length} أقسام تخصصية
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              {/* ON / OFF Toggle Slider Button */}
+                              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-colors ${
+                                isColActive
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                                  : 'bg-rose-50 border-rose-300 text-rose-950'
+                              }`}>
+                                <span className="text-[10px] font-black">
+                                  {isColActive ? 'متاحة (ON)' : 'غير متاح (OFF)'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCollegeActive(uni.id, col.id, col.name)}
+                                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                    isColActive ? 'bg-emerald-600' : 'bg-slate-400'
+                                  }`}
+                                  title={isColActive ? 'تعطيل الكلية (إيقاف)' : 'تفعيل الكلية (تشغيل)'}
+                                >
+                                  <span
+                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                                      isColActive ? 'translate-x-0' : '-translate-x-5'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddUniModal(uni, col)}
+                                className="text-amber-800 hover:text-amber-950 hover:bg-amber-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
                               >
-                                {dept.name}
-                              </span>
-                            ))}
+                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                                <span>تعديل</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCollege(uni.id, col.id, col.name)}
+                                className="text-rose-600 hover:text-rose-800 hover:bg-rose-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>حذف</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
-
-                        {/* College Action Bar */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                          <span className="text-slate-500 font-bold text-[11px]">
-                            {col.departments.length} أقسام تخصصية
-                          </span>
-
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAddUniModal(uni, col)}
-                              className="text-amber-800 hover:text-amber-950 hover:bg-amber-100/70 p-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              <span>تعديل</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCollege(uni.id, col.id, col.name)}
-                              className="text-rose-600 hover:text-rose-800 hover:bg-rose-100/70 p-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>حذف</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                 </div>
-              ))}
-            </div>
+              );
+            })}
+          </div>
 
           </div>
         </div>
@@ -4883,22 +5708,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
                               </td>
 
-                              {/* Direct Order Status Management Selector */}
+                              {/* Direct Order Status & Editable Delivery Time Management Selector */}
                               <td className="p-3 whitespace-nowrap">
-                                <select
-                                  value={ord.status}
-                                  onChange={(e) => onUpdateOrderStatus(ord.id, e.target.value as OrderStatus, ord.paymentStatus === 'verified' ? 'verified' : 'failed')}
-                                  className="bg-white border border-slate-300 rounded-xl text-xs font-bold px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 cursor-pointer shadow-sm"
-                                >
-                                  <option value="pending">جديد (في الانتظار)</option>
-                                  <option value="reviewing">جاري المراجعة</option>
-                                  <option value="printing">جاري الطباعة 🖨️</option>
-                                  <option value="packaging">جاري التغليف 📦</option>
-                                  <option value="out_for_delivery">مع المندوب للتوصيل 🛵</option>
-                                  <option value="ready_for_pickup">جاهز للاستلام 🏪</option>
-                                  <option value="completed">تم التسليم بنجاح ✅</option>
-                                  <option value="cancelled">ملغي ❌</option>
-                                </select>
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={ord.status}
+                                    onChange={(e) => onUpdateOrderStatus(ord.id, e.target.value as OrderStatus, ord.paymentStatus === 'verified' ? 'verified' : 'failed')}
+                                    className="bg-white border border-slate-300 rounded-xl text-xs font-bold px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 cursor-pointer shadow-sm"
+                                  >
+                                    <option value="pending">جديد (في الانتظار)</option>
+                                    <option value="reviewing">جاري المراجعة</option>
+                                    <option value="printing">جاري الطباعة 🖨️</option>
+                                    <option value="packaging">جاري التغليف 📦</option>
+                                    <option value="out_for_delivery">مع المندوب للتوصيل 🛵</option>
+                                    <option value="ready_for_pickup">جاهز للاستلام 🏪</option>
+                                    <option value="completed">تم التسليم بنجاح ✅</option>
+                                    <option value="cancelled">ملغي ❌</option>
+                                  </select>
+
+                                  <div className="flex items-center gap-1 bg-amber-50 border border-amber-300 p-1 rounded-xl text-xs font-bold shadow-2xs">
+                                    <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                    <input
+                                      type="text"
+                                      placeholder="الموعد المتوقع..."
+                                      value={editingDeliveryTimes[ord.id] !== undefined ? editingDeliveryTimes[ord.id] : (ord.estimatedCompletionTime || getEstimatedDeliveryText(ord))}
+                                      onChange={(e) => handleDeliveryTimeTextChange(ord.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          handleSaveDeliveryTime(ord);
+                                        }
+                                      }}
+                                      className="bg-white border border-amber-300 text-amber-950 text-xs px-2 py-0.5 rounded w-32 font-bold"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveDeliveryTime(ord)}
+                                      className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-0.5 rounded text-[11px] cursor-pointer"
+                                      title="حفظ موعد التسليم"
+                                    >
+                                      {savedTimeFeedback[ord.id] ? '✓' : 'حفظ'}
+                                    </button>
+                                  </div>
+                                </div>
                               </td>
 
                               {/* Actions */}
@@ -4914,24 +5765,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <span>الإيصال</span>
                                   </button>
 
-                                  {onDeleteOrder && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        onDeleteOrder(ord.id);
-                                        addLogEntry(
-                                          'order_deleted',
-                                          `تم حذف الطلب (${ord.id}) التابع للعميل/الطالب "${ord.customerName}" نهائياً من النظام`,
-                                          ord.id,
-                                          ord.customerName
-                                        );
-                                      }}
-                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors border border-rose-200 cursor-pointer"
-                                      title="حذف الطلب"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(ord.id, ord.customerName)}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors border border-rose-200 cursor-pointer"
+                                    title="حذف هذا الطلب ونقله إلى سلة المحذوفات"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -4964,11 +5805,140 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* PIN CODE MODAL FOR TRASH RECYCLE BIN */}
+      {showTrashPinModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 text-right space-y-5 relative">
+            <button
+              onClick={() => setShowTrashPinModal(false)}
+              className="absolute left-4 top-4 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className="p-3 bg-rose-100 text-rose-600 rounded-2xl">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">سلة المحذوفات محمية 🔒</h3>
+                <p className="text-xs text-slate-500 mt-0.5">يرجى إدخال رمز الأمان لعرض المحذوفات واسترجاعها</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUnlockTrash} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  رمز الأمان (PIN Code):
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-5 h-5 text-slate-400 absolute right-3.5 top-3.5" />
+                  <input
+                    type="password"
+                    required
+                    autoFocus
+                    value={trashPinInput}
+                    onChange={e => {
+                      setTrashPinInput(e.target.value);
+                      setTrashPinError('');
+                    }}
+                    placeholder="أدخل رمز الأمان..."
+                    className="w-full pr-11 pl-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-mono text-center text-xl text-slate-900 tracking-widest"
+                  />
+                </div>
+                {trashPinError && (
+                  <p className="mt-2 text-xs font-bold text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{trashPinError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-3 rounded-xl shadow-md transition-all text-sm cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>فتح سلة المحذوفات</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTrashPinModal(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Order Slip Printable Modal */}
       <OrderSlipModal 
         order={printOrderSlip} 
         onClose={() => setPrintOrderSlip(null)} 
       />
+
+      {/* CUSTOM REUSABLE CONFIRMATION MODAL */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200 text-right space-y-5 relative">
+            <button
+              onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="absolute left-4 top-4 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <div className={`p-3 rounded-2xl ${
+                confirmDialog.type === 'danger' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+              }`}>
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900">{confirmDialog.title}</h3>
+            </div>
+
+            <p className="text-sm font-bold text-slate-700 leading-relaxed">
+              {confirmDialog.message}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                }}
+                className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all shadow-md cursor-pointer ${
+                  confirmDialog.type === 'danger'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+              >
+                {confirmDialog.confirmText}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-colors cursor-pointer border border-slate-200"
+              >
+                {confirmDialog.cancelText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[100] bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 text-xs sm:text-sm font-bold flex items-center gap-2.5 animate-in slide-in-from-bottom-5 duration-200">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
     </div>
   );

@@ -15,6 +15,137 @@ export const OrderSlipModal: React.FC<OrderSlipModalProps> = ({ order, onClose }
   };
 
   const handlePrint = () => {
+    const printableElement = document.getElementById('printable-order-slip');
+    if (!printableElement) {
+      window.print();
+      return;
+    }
+
+    const htmlContent = printableElement.innerHTML;
+
+    // Try opening a dedicated clean print popup window
+    try {
+      const printWin = window.open('', '_blank', 'width=850,height=1100,scrollbars=yes,resizable=yes');
+      if (printWin) {
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html dir="rtl" lang="ar">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>بوليصة شحن وتمرير - طلب #${order.id} - A4 Sudan</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+            <style>
+              * {
+                font-family: 'Tajawal', -apple-system, sans-serif !important;
+                box-sizing: border-box;
+              }
+              body {
+                background-color: #ffffff !important;
+                color: #0f172a !important;
+                padding: 16px;
+                margin: 0;
+                direction: rtl;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              @media print {
+                @page {
+                  size: A4 portrait;
+                  margin: 8mm;
+                }
+                body {
+                  padding: 0 !important;
+                }
+                .no-print {
+                  display: none !important;
+                }
+              }
+            </style>
+          </head>
+          <body class="bg-white text-slate-900 dir-rtl p-4">
+            <div class="max-w-2xl mx-auto border-2 border-slate-900 p-6 rounded-2xl bg-white shadow-none">
+              ${htmlContent}
+            </div>
+            <div class="no-print mt-6 text-center">
+              <button onclick="window.print()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-black px-6 py-2.5 rounded-xl text-sm shadow cursor-pointer">
+                🖨️ اضغط هنا للطباعة مرة أخرى
+              </button>
+            </div>
+            <script>
+              window.onload = function() {
+                setTimeout(function() {
+                  window.focus();
+                  window.print();
+                }, 400);
+              };
+            </script>
+          </body>
+          </html>
+        `);
+        printWin.document.close();
+        return;
+      }
+    } catch (e) {
+      console.warn("Popup print failed, falling back to iframe print...", e);
+    }
+
+    // Fallback 1: Hidden iframe print
+    try {
+      let iframe = document.getElementById('printable-order-iframe') as HTMLIFrameElement | null;
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'printable-order-iframe';
+        iframe.style.position = 'fixed';
+        iframe.style.right = '-9999px';
+        iframe.style.bottom = '-9999px';
+        iframe.style.width = '0px';
+        iframe.style.height = '0px';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+      }
+
+      const doc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (doc) {
+        doc.open();
+        doc.write(`
+          <!DOCTYPE html>
+          <html dir="rtl" lang="ar">
+          <head>
+            <meta charset="utf-8">
+            <title>بوليصة طلب #${order.id}</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+            <style>
+              * { font-family: 'Tajawal', sans-serif !important; }
+              body { padding: 15px; background: white; color: black; direction: rtl; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              @media print { @page { size: auto; margin: 8mm; } }
+            </style>
+          </head>
+          <body>
+            <div style="border: 2px solid #000; padding: 20px; border-radius: 12px; background: white;">
+              ${htmlContent}
+            </div>
+            <script>
+              setTimeout(function() {
+                window.focus();
+                window.print();
+              }, 400);
+            </script>
+          </body>
+          </html>
+        `);
+        doc.close();
+        return;
+      }
+    } catch (e) {
+      console.warn("Iframe print failed, falling back to window.print()...", e);
+    }
+
+    // Fallback 2: Direct window.print()
     window.print();
   };
 
@@ -28,6 +159,12 @@ export const OrderSlipModal: React.FC<OrderSlipModalProps> = ({ order, onClose }
       {/* Print Stylesheet injection */}
       <style>{`
         @media print {
+          body {
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -125,7 +262,9 @@ export const OrderSlipModal: React.FC<OrderSlipModalProps> = ({ order, onClose }
 
               <div className="space-y-1">
                 <span className="text-slate-500 font-bold block">📞 رقم الواتساب / الهاتف:</span>
-                <strong className="text-slate-950 font-black text-sm font-mono block dir-ltr text-right">{order.customerPhone}</strong>
+                <strong className="text-slate-950 font-black text-sm font-mono block dir-ltr text-right">
+                  {order.customerPhone} {order.customerPhone2 ? ` / ${order.customerPhone2}` : ''}
+                </strong>
               </div>
 
               <div className="space-y-1">

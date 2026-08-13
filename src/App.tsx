@@ -396,7 +396,7 @@ export default function App() {
     }).catch(() => {});
   };
 
-  const handleUpdateOrderStatus = (orderId: string, newStatus: OrderStatus, paymentStatus?: 'verified' | 'failed') => {
+  const handleUpdateOrderStatus = (orderId: string, newStatus: OrderStatus, paymentStatus?: 'verified' | 'failed', estimatedCompletionTime?: string) => {
     setOrders(prev => {
       const updated = prev.map(o => {
         if (o.id !== orderId) return o;
@@ -404,6 +404,7 @@ export default function App() {
           ...o,
           status: newStatus,
           paymentStatus: paymentStatus || o.paymentStatus,
+          ...(estimatedCompletionTime !== undefined ? { estimatedCompletionTime } : {}),
         };
       });
       try {
@@ -413,13 +414,21 @@ export default function App() {
     });
 
     // Sync with Firebase Cloud Firestore
-    updateOrderInCloud(orderId, { status: newStatus, ...(paymentStatus ? { paymentStatus } : {}) }).catch(() => {});
+    updateOrderInCloud(orderId, { 
+      status: newStatus, 
+      ...(paymentStatus ? { paymentStatus } : {}),
+      ...(estimatedCompletionTime !== undefined ? { estimatedCompletionTime } : {}),
+    }).catch(() => {});
 
     // Sync with backend API
     fetch(`/api/orders/${orderId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus, paymentStatus }),
+      body: JSON.stringify({ 
+        status: newStatus, 
+        paymentStatus, 
+        ...(estimatedCompletionTime !== undefined ? { estimatedCompletionTime } : {}),
+      }),
     }).catch(() => {});
   };
 
@@ -549,7 +558,7 @@ export default function App() {
     );
     const isOwn = isAccountOrder || 
       (myOrderIds.length > 0 && myOrderIds.includes(o.id)) ||
-      (Boolean(myPhone) && o.customerPhone && o.customerPhone.trim() === myPhone);
+      (Boolean(myPhone) && ((o.customerPhone && o.customerPhone.trim() === myPhone) || (o.customerPhone2 && o.customerPhone2.trim() === myPhone)));
     return isOwn;
   });
 

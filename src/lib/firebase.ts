@@ -396,6 +396,78 @@ export function subscribeToCloudOrders(callback: (orders: PrintOrder[]) => void)
 }
 
 /**
+ * Deleted Orders Firestore Integration (Recycle Bin Sync)
+ */
+const DELETED_ORDERS_COLLECTION = 'deleted_orders';
+
+export async function saveDeletedOrderToCloud(order: PrintOrder): Promise<boolean> {
+  try {
+    if (!order || !order.id) return false;
+    const cleanOrder = deepCleanForFirestore(order);
+    const docRef = doc(db, DELETED_ORDERS_COLLECTION, order.id);
+    await setDoc(docRef, { ...cleanOrder, deletedAt: order.deletedAt || new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (error) {
+    console.warn('Firestore save deleted order warning:', error);
+    return false;
+  }
+}
+
+export async function deleteDeletedOrderFromCloud(orderId: string): Promise<boolean> {
+  try {
+    if (!orderId) return false;
+    const docRef = doc(db, DELETED_ORDERS_COLLECTION, orderId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.warn('Firestore delete deleted order warning:', error);
+    return false;
+  }
+}
+
+export async function getDeletedOrdersFromCloud(): Promise<PrintOrder[]> {
+  try {
+    const ref = collection(db, DELETED_ORDERS_COLLECTION);
+    const snapshot = await getDocs(ref);
+    const list: PrintOrder[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data && data.id) list.push(data as PrintOrder);
+    });
+    list.sort((a, b) => new Date(b.deletedAt || b.createdAt || 0).getTime() - new Date(a.deletedAt || a.createdAt || 0).getTime());
+    return list;
+  } catch (e) {
+    console.warn('Error fetching deleted orders from cloud:', e);
+    return [];
+  }
+}
+
+export function subscribeToCloudDeletedOrders(callback: (deletedOrders: PrintOrder[]) => void): () => void {
+  try {
+    const ref = collection(db, DELETED_ORDERS_COLLECTION);
+    const q = query(ref);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const list: PrintOrder[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data && data.id) list.push(data as PrintOrder);
+        });
+        list.sort((a, b) => new Date(b.deletedAt || b.createdAt || 0).getTime() - new Date(a.deletedAt || a.createdAt || 0).getTime());
+        callback(list);
+      },
+      (error) => {
+        console.warn('Firestore deleted_orders listener warning:', error);
+      }
+    );
+  } catch (e) {
+    console.warn('Firestore deleted_orders subscribe warning:', e);
+    return () => {};
+  }
+}
+
+/**
  * Study Sheets Firestore Integration
  */
 const SHEETS_COLLECTION = 'study_sheets';

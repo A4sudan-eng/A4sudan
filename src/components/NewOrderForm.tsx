@@ -28,6 +28,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [files, setFiles] = useState<PrintFileOptions[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerPhone2, setCustomerPhone2] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [institution, setInstitution] = useState('');
   const [specialization, setSpecialization] = useState('');
@@ -397,8 +398,8 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       alert('الرجاء رفع ملف واحد على الأقل للطباعة');
       return;
     }
-    if (!customerName.trim() || !customerPhone.trim()) {
-      alert('الرجاء كتابة الاسم الكامل ورقم الهاتف لتواصل مندوب الطباعة');
+    if (!customerName.trim() || !customerPhone.trim() || !customerPhone2.trim()) {
+      alert('الرجاء كتابة الاسم الكامل ورقمي الهاتف (الأساسي والثاني) لتواصل مندوب الطباعة والتوصيل');
       return;
     }
     if (deliveryMethod === 'delivery' && !addressOrCampus.trim()) {
@@ -434,6 +435,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       userId: auth.currentUser?.uid,
       customerName,
       customerPhone,
+      customerPhone2: customerPhone2.trim() || undefined,
       customerEmail: customerEmail || auth.currentUser?.email,
       institution: institution.trim() || undefined,
       specialization: specialization.trim() || undefined,
@@ -620,8 +622,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 </div>
 
                 <div>
-                  <span className="text-slate-500 block font-bold mb-0.5">📞 رقم التواصل (واتساب):</span>
-                  <strong className="text-slate-900 text-sm font-mono dir-ltr">{createdOrder.customerPhone}</strong>
+                  <span className="text-slate-500 block font-bold mb-0.5">📞 أرقام التواصل (أساسي / احتياطي):</span>
+                  <strong className="text-slate-900 text-sm font-mono dir-ltr">
+                    {createdOrder.customerPhone} {createdOrder.customerPhone2 ? ` / ${createdOrder.customerPhone2}` : ''}
+                  </strong>
                 </div>
 
                 <div className="sm:col-span-2 md:col-span-3 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg flex items-center justify-between gap-2 flex-wrap">
@@ -922,7 +926,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
                 الاسم الكامل *
@@ -942,7 +946,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
-                رقم الهاتف (واتساب / اتصال) *
+                رقم الهاتف الأول (أساسي) *
               </label>
               <div className="relative">
                 <Phone className="w-5 h-5 text-slate-400 absolute right-3 top-3" />
@@ -952,6 +956,23 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   value={customerPhone}
                   onChange={e => setCustomerPhone(e.target.value)}
                   placeholder="مثال: 0119636365"
+                  className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm dir-ltr text-right"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1">
+                رقم الهاتف الثاني (إجباري) *
+              </label>
+              <div className="relative">
+                <Phone className="w-5 h-5 text-slate-400 absolute right-3 top-3" />
+                <input
+                  type="tel"
+                  required
+                  value={customerPhone2}
+                  onChange={e => setCustomerPhone2(e.target.value)}
+                  placeholder="مثال: 0912345678"
                   className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm dir-ltr text-right"
                 />
               </div>
@@ -1624,8 +1645,12 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                       <strong className="text-white font-bold">{customerName || 'لم يدخل بعد'}</strong>
                     </div>
                     <div className="text-emerald-100 flex justify-between">
-                      <span>الهاتف:</span>
+                      <span>الهاتف 1 (أساسي):</span>
                       <strong className="text-white font-mono">{customerPhone || 'لم يدخل بعد'}</strong>
+                    </div>
+                    <div className="text-emerald-100 flex justify-between">
+                      <span>الهاتف 2 (إجباري):</span>
+                      <strong className="text-white font-mono">{customerPhone2 || 'لم يدخل بعد'}</strong>
                     </div>
                     {(institution || specialization) && (
                       <div className="text-emerald-200 text-[11px] pt-1 border-t border-emerald-800/60">

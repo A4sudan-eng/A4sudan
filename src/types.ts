@@ -32,6 +32,7 @@ export interface PrintOrder {
   userId?: string;
   customerName: string;
   customerPhone: string;
+  customerPhone2?: string;
   customerEmail?: string;
   institution?: string; // e.g., جامعة النيلين, جامعة الخرطوم
   specialization?: string; // e.g., كلية الطب - الدفعة 29
@@ -51,6 +52,7 @@ export interface PrintOrder {
   paymentStatus: 'pending' | 'verified' | 'cash_pending' | 'failed';
   status: OrderStatus;
   createdAt: string;
+  deletedAt?: string;
   estimatedCompletionTime?: string;
   notes?: string;
 }

@@ -28,6 +28,8 @@ async function startServer() {
   // Persistent File Storage Helper for Orders
   const ORDERS_FILE_PATH = path.join(process.cwd(), 'a4_orders_store.json');
   const SHEETS_FILE_PATH = path.join(process.cwd(), 'a4_sheets_store.json');
+  const DELETED_ORDERS_FILE_PATH = path.join(process.cwd(), 'a4_deleted_orders_store.json');
+  const DELETED_IDS_FILE_PATH = path.join(process.cwd(), 'a4_deleted_ids_store.json');
 
   function loadOrdersFromStore(): PrintOrder[] {
     try {
@@ -51,6 +53,45 @@ async function startServer() {
       console.warn('Could not write persistent orders file:', err);
     }
   }
+
+  function loadDeletedOrdersFromStore(): PrintOrder[] {
+    try {
+      if (fs.existsSync(DELETED_ORDERS_FILE_PATH)) {
+        const raw = fs.readFileSync(DELETED_ORDERS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) return list;
+      }
+    } catch (err) {}
+    return [];
+  }
+
+  function saveDeletedOrdersToStore(list: PrintOrder[]) {
+    try {
+      fs.writeFileSync(DELETED_ORDERS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {}
+  }
+
+  function loadDeletedIdsFromStore(): string[] {
+    try {
+      if (fs.existsSync(DELETED_IDS_FILE_PATH)) {
+        const raw = fs.readFileSync(DELETED_IDS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) return list;
+      }
+    } catch (err) {}
+    return [];
+  }
+
+  function saveDeletedIdsToStore(list: string[]) {
+    try {
+      fs.writeFileSync(DELETED_IDS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {}
+  }
+
+  let ordersList: PrintOrder[] = loadOrdersFromStore();
+  let sheetsList: StudySheet[] = loadSheetsFromStore();
+  let deletedOrdersList: PrintOrder[] = loadDeletedOrdersFromStore();
+  let deletedOrderIds = new Set<string>(loadDeletedIdsFromStore().map(id => id.toLowerCase()));
 
   function loadSheetsFromStore(): StudySheet[] {
     try {
@@ -77,8 +118,6 @@ async function startServer() {
 
   // In-memory persistent state initialized from disk
   let currentRates: PricingRates = { ...DEFAULT_PRICING_RATES };
-  let ordersList: PrintOrder[] = loadOrdersFromStore();
-  let sheetsList: StudySheet[] = loadSheetsFromStore();
 
   // Initialize Gemini AI Client
   const apiKey = process.env.GEMINI_API_KEY;
@@ -224,9 +263,28 @@ async function startServer() {
 
   app.delete('/api/orders/:id', (req, res) => {
     const { id } = req.params;
-    ordersList = ordersList.filter(o => o.id.toLowerCase() !== id.toLowerCase());
+    const lowerId = id.toLowerCase();
+
+    // Find target order if present
+    const target = ordersList.find(o => o.id.toLowerCase() === lowerId) || req.body?.order;
+    ordersList = ordersList.filter(o => o.id.toLowerCase() !== lowerId);
     saveOrdersToStore(ordersList);
-    res.json({ success: true, remaining: ordersList.length });
+
+    // Record ID as deleted
+    deletedOrderIds.add(lowerId);
+    saveDeletedIdsToStore(Array.from(deletedOrderIds));
+
+    // If order details provided or found, add to deletedOrdersList (trash)
+    if (target) {
+      const deletedItem: PrintOrder = {
+        ...target,
+        deletedAt: target.deletedAt || new Date().toISOString(),
+      };
+      deletedOrdersList = [deletedItem, ...deletedOrdersList.filter(d => d.id.toLowerCase() !== lowerId)];
+      saveDeletedOrdersToStore(deletedOrdersList);
+    }
+
+    res.json({ success: true, remaining: ordersList.length, deletedOrdersCount: deletedOrdersList.length });
   });
 
   app.post('/api/orders/batch-sync', (req, res) => {
@@ -234,7 +292,12 @@ async function startServer() {
     if (Array.isArray(orders)) {
       orders.forEach((incoming: PrintOrder) => {
         if (incoming && incoming.id) {
-          const idx = ordersList.findIndex(o => o.id.toLowerCase() === incoming.id.toLowerCase());
+          const lowerId = incoming.id.toLowerCase();
+          // DO NOT re-add if this order was deleted!
+          if (deletedOrderIds.has(lowerId) || deletedOrdersList.some(d => d.id.toLowerCase() === lowerId)) {
+            return;
+          }
+          const idx = ordersList.findIndex(o => o.id.toLowerCase() === lowerId);
           if (idx === -1) {
             ordersList.unshift(incoming);
           } else {
@@ -249,6 +312,78 @@ async function startServer() {
       saveOrdersToStore(ordersList);
     }
     res.json({ success: true, total: ordersList.length, orders: ordersList });
+  });
+
+  // Deleted Orders (Recycle Bin) API
+  app.get('/api/deleted-orders', (req, res) => {
+    res.json(deletedOrdersList);
+  });
+
+  app.post('/api/deleted-orders', (req, res) => {
+    const item: PrintOrder = req.body;
+    if (item && item.id) {
+      const lowerId = item.id.toLowerCase();
+      deletedOrderIds.add(lowerId);
+      saveDeletedIdsToStore(Array.from(deletedOrderIds));
+
+      // Remove from active orders
+      ordersList = ordersList.filter(o => o.id.toLowerCase() !== lowerId);
+      saveOrdersToStore(ordersList);
+
+      // Add to trash
+      const deletedItem = { ...item, deletedAt: item.deletedAt || new Date().toISOString() };
+      deletedOrdersList = [deletedItem, ...deletedOrdersList.filter(d => d.id.toLowerCase() !== lowerId)];
+      saveDeletedOrdersToStore(deletedOrdersList);
+    }
+    res.json({ success: true, deletedOrders: deletedOrdersList });
+  });
+
+  app.delete('/api/deleted-orders/:id', (req, res) => {
+    const { id } = req.params;
+    const lowerId = id.toLowerCase();
+
+    // Ensure ID remains in deletedOrderIds so it never resurrects
+    deletedOrderIds.add(lowerId);
+    saveDeletedIdsToStore(Array.from(deletedOrderIds));
+
+    deletedOrdersList = deletedOrdersList.filter(d => d.id.toLowerCase() !== lowerId);
+    saveDeletedOrdersToStore(deletedOrdersList);
+
+    res.json({ success: true, remaining: deletedOrdersList.length });
+  });
+
+  app.post('/api/deleted-orders/empty', (req, res) => {
+    deletedOrdersList.forEach(d => {
+      if (d && d.id) deletedOrderIds.add(d.id.toLowerCase());
+    });
+    saveDeletedIdsToStore(Array.from(deletedOrderIds));
+
+    deletedOrdersList = [];
+    saveDeletedOrdersToStore([]);
+
+    res.json({ success: true });
+  });
+
+  app.post('/api/deleted-orders/:id/restore', (req, res) => {
+    const { id } = req.params;
+    const lowerId = id.toLowerCase();
+
+    // Remove from deletedOrderIds
+    deletedOrderIds.delete(lowerId);
+    saveDeletedIdsToStore(Array.from(deletedOrderIds));
+
+    const restoredTarget = deletedOrdersList.find(d => d.id.toLowerCase() === lowerId) || req.body;
+    deletedOrdersList = deletedOrdersList.filter(d => d.id.toLowerCase() !== lowerId);
+    saveDeletedOrdersToStore(deletedOrdersList);
+
+    if (restoredTarget && restoredTarget.id) {
+      const restoredOrder = { ...restoredTarget };
+      delete restoredOrder.deletedAt;
+      ordersList = [restoredOrder, ...ordersList.filter(o => o.id.toLowerCase() !== lowerId)];
+      saveOrdersToStore(ordersList);
+    }
+
+    res.json({ success: true, ordersCount: ordersList.length });
   });
 
   // Study Sheets API
