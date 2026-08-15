@@ -1,24 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Truck, MapPin, Package, Store, Info, X, ChevronDown, ChevronUp } from 'lucide-react';
-import { DELIVERY_ZONES } from '../data/initialData';
+import { DeliveryZone } from '../types';
+import { getStoredDeliveryZones } from '../utils/deliveryManager';
 import { formatSDG } from '../utils/pricing';
 
 interface DeliveryRatesGuideProps {
   isOpen?: boolean;
   onClose?: () => void;
   onSelectZone?: (cityText: string, fee: number) => void;
+  zones?: DeliveryZone[];
 }
 
 export const DeliveryRatesGuide: React.FC<DeliveryRatesGuideProps> = ({
   isOpen = true,
   onClose,
   onSelectZone,
+  zones: propZones,
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'omdurman' | 'bahri_eastnile' | 'khartoum' | 'states'>('all');
+  const [internalZones, setInternalZones] = useState<DeliveryZone[]>(() => propZones || getStoredDeliveryZones());
+
+  useEffect(() => {
+    if (propZones) {
+      setInternalZones(propZones);
+    }
+  }, [propZones]);
+
+  useEffect(() => {
+    const handleZonesUpdated = () => {
+      setInternalZones(getStoredDeliveryZones());
+    };
+    window.addEventListener('a4_delivery_zones_updated', handleZonesUpdated);
+    return () => window.removeEventListener('a4_delivery_zones_updated', handleZonesUpdated);
+  }, []);
+
+  const activeZones = internalZones.filter(z => z.isActive !== false && z.regionKey !== 'pickup');
 
   const filteredZones = activeTab === 'all'
-    ? DELIVERY_ZONES.filter(z => z.regionKey !== 'pickup')
-    : DELIVERY_ZONES.filter(z => z.regionKey === activeTab);
+    ? activeZones
+    : activeZones.filter(z => z.regionKey === activeTab);
 
   const regionBadges: Record<string, { label: string; bg: string; text: string; icon: string }> = {
     omdurman: { label: 'أمدرمان 👑', bg: 'bg-amber-100', text: 'text-amber-900 border-amber-300', icon: '👑' },
@@ -125,7 +145,7 @@ export const DeliveryRatesGuide: React.FC<DeliveryRatesGuideProps> = ({
           return (
             <div
               key={zone.id}
-              onClick={() => onSelectZone && onSelectZone(`${zone.regionName} - ${zone.zoneName}`, zone.fee)}
+              onClick={() => onSelectZone && onSelectZone(zone.zoneName, zone.fee)}
               className={`p-4 rounded-xl border border-slate-200 bg-white hover:border-amber-400 hover:shadow-md transition-all flex flex-col justify-between group ${
                 onSelectZone ? 'cursor-pointer' : ''
               }`}

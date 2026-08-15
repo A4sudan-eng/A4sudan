@@ -4,8 +4,9 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
-import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS } from './src/data/initialData.js';
-import { PrintOrder, PricingRates, StudySheet } from './src/types.js';
+import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, DELIVERY_ZONES } from './src/data/initialData.js';
+import { SUDAN_UNIVERSITIES, UniversityInfo, ACADEMIC_LEVELS, AcademicLevel } from './src/data/neelainData.js';
+import { PrintOrder, PricingRates, StudySheet, DeliveryZone } from './src/types.js';
 
 async function startServer() {
   const app = express();
@@ -30,6 +31,10 @@ async function startServer() {
   const SHEETS_FILE_PATH = path.join(process.cwd(), 'a4_sheets_store.json');
   const DELETED_ORDERS_FILE_PATH = path.join(process.cwd(), 'a4_deleted_orders_store.json');
   const DELETED_IDS_FILE_PATH = path.join(process.cwd(), 'a4_deleted_ids_store.json');
+  const UNIVERSITIES_FILE_PATH = path.join(process.cwd(), 'a4_universities_store.json');
+  const VISITORS_FILE_PATH = path.join(process.cwd(), 'a4_visitors_store.json');
+  const DELIVERY_ZONES_FILE_PATH = path.join(process.cwd(), 'a4_delivery_zones_store.json');
+  const ACADEMIC_LEVELS_FILE_PATH = path.join(process.cwd(), 'a4_academic_levels_store.json');
 
   function loadOrdersFromStore(): PrintOrder[] {
     try {
@@ -88,10 +93,108 @@ async function startServer() {
     } catch (err) {}
   }
 
+  function loadUniversitiesFromStore(): UniversityInfo[] {
+    try {
+      if (fs.existsSync(UNIVERSITIES_FILE_PATH)) {
+        const raw = fs.readFileSync(UNIVERSITIES_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent universities file:', err);
+    }
+    return [...SUDAN_UNIVERSITIES];
+  }
+
+  function saveUniversitiesToStore(list: UniversityInfo[]) {
+    try {
+      fs.writeFileSync(UNIVERSITIES_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent universities file:', err);
+    }
+  }
+
+  function loadVisitorsFromStore(): any[] {
+    try {
+      if (fs.existsSync(VISITORS_FILE_PATH)) {
+        const raw = fs.readFileSync(VISITORS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent visitors file:', err);
+    }
+    return [];
+  }
+
+  function saveVisitorsToStore(list: any[]) {
+    try {
+      // Keep most recent 5000 records
+      const trimmed = list.slice(0, 5000);
+      fs.writeFileSync(VISITORS_FILE_PATH, JSON.stringify(trimmed, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent visitors file:', err);
+    }
+  }
+
+  function loadDeliveryZonesFromStore(): DeliveryZone[] {
+    try {
+      if (fs.existsSync(DELIVERY_ZONES_FILE_PATH)) {
+        const raw = fs.readFileSync(DELIVERY_ZONES_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent delivery zones file:', err);
+    }
+    return [...DELIVERY_ZONES];
+  }
+
+  function saveDeliveryZonesToStore(list: DeliveryZone[]) {
+    try {
+      fs.writeFileSync(DELIVERY_ZONES_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent delivery zones file:', err);
+    }
+  }
+
+  function loadAcademicLevelsFromStore(): AcademicLevel[] {
+    try {
+      if (fs.existsSync(ACADEMIC_LEVELS_FILE_PATH)) {
+        const raw = fs.readFileSync(ACADEMIC_LEVELS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent academic levels file:', err);
+    }
+    return [...ACADEMIC_LEVELS];
+  }
+
+  function saveAcademicLevelsToStore(list: AcademicLevel[]) {
+    try {
+      fs.writeFileSync(ACADEMIC_LEVELS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent academic levels file:', err);
+    }
+  }
+
   let ordersList: PrintOrder[] = loadOrdersFromStore();
   let sheetsList: StudySheet[] = loadSheetsFromStore();
   let deletedOrdersList: PrintOrder[] = loadDeletedOrdersFromStore();
   let deletedOrderIds = new Set<string>(loadDeletedIdsFromStore().map(id => id.toLowerCase()));
+  let universitiesList: UniversityInfo[] = loadUniversitiesFromStore();
+  let academicLevelsList: AcademicLevel[] = loadAcademicLevelsFromStore();
+  let visitorsList: any[] = loadVisitorsFromStore();
+  let deliveryZonesList: DeliveryZone[] = loadDeliveryZonesFromStore();
 
   function loadSheetsFromStore(): StudySheet[] {
     try {
@@ -204,18 +307,149 @@ async function startServer() {
     res.status(400).json({ error: 'Invalid pricing data' });
   });
 
+  // Universities API (Global Real-time Synchronization)
+  app.get('/api/universities', (req, res) => {
+    res.json(universitiesList);
+  });
+
+  app.post('/api/universities', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      universitiesList = list;
+      saveUniversitiesToStore(universitiesList);
+      return res.json({ success: true, universities: universitiesList });
+    }
+    if (req.body && Array.isArray(req.body.universities)) {
+      universitiesList = req.body.universities;
+      saveUniversitiesToStore(universitiesList);
+      return res.json({ success: true, universities: universitiesList });
+    }
+    res.status(400).json({ error: 'Invalid universities data' });
+  });
+
+  app.put('/api/universities', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      universitiesList = list;
+      saveUniversitiesToStore(universitiesList);
+      return res.json({ success: true, universities: universitiesList });
+    }
+    if (req.body && Array.isArray(req.body.universities)) {
+      universitiesList = req.body.universities;
+      saveUniversitiesToStore(universitiesList);
+      return res.json({ success: true, universities: universitiesList });
+    }
+    res.status(400).json({ error: 'Invalid universities data' });
+  });
+
+  // Academic Levels & Semesters API (Global ON/OFF Controls Synchronization)
+  app.get('/api/academic-levels', (req, res) => {
+    res.json(academicLevelsList);
+  });
+
+  app.post('/api/academic-levels', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      academicLevelsList = list;
+      saveAcademicLevelsToStore(academicLevelsList);
+      return res.json({ success: true, academicLevels: academicLevelsList });
+    }
+    if (req.body && Array.isArray(req.body.levels)) {
+      academicLevelsList = req.body.levels;
+      saveAcademicLevelsToStore(academicLevelsList);
+      return res.json({ success: true, academicLevels: academicLevelsList });
+    }
+    res.status(400).json({ error: 'Invalid academic levels data' });
+  });
+
+  app.put('/api/academic-levels', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      academicLevelsList = list;
+      saveAcademicLevelsToStore(academicLevelsList);
+      return res.json({ success: true, academicLevels: academicLevelsList });
+    }
+    if (req.body && Array.isArray(req.body.levels)) {
+      academicLevelsList = req.body.levels;
+      saveAcademicLevelsToStore(academicLevelsList);
+      return res.json({ success: true, academicLevels: academicLevelsList });
+    }
+    res.status(400).json({ error: 'Invalid academic levels data' });
+  });
+
+  // Analytics & Visitor Tracking API
+  app.post('/api/analytics/track', (req, res) => {
+    try {
+      const record = req.body;
+      if (record && record.id) {
+        visitorsList = [record, ...visitorsList].slice(0, 5000);
+        saveVisitorsToStore(visitorsList);
+        return res.json({ success: true, count: visitorsList.length });
+      }
+      res.status(400).json({ error: 'Invalid visitor record' });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to record visitor' });
+    }
+  });
+
+  app.get('/api/analytics/visitors', (req, res) => {
+    res.json(visitorsList);
+  });
+
+  app.post('/api/analytics/reset', (req, res) => {
+    try {
+      visitorsList = [];
+      saveVisitorsToStore([]);
+      res.json({ success: true, message: 'All analytics and visitors history reset to zero' });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to reset analytics' });
+    }
+  });
+
+  // Delivery Zones API
+  app.get('/api/delivery-zones', (req, res) => {
+    res.json(deliveryZonesList);
+  });
+
+  app.post('/api/delivery-zones', (req, res) => {
+    if (Array.isArray(req.body)) {
+      deliveryZonesList = req.body;
+      saveDeliveryZonesToStore(deliveryZonesList);
+      return res.json({ success: true, zones: deliveryZonesList });
+    }
+    if (req.body && req.body.zone) {
+      const newZone: DeliveryZone = req.body.zone;
+      const index = deliveryZonesList.findIndex(z => z.id === newZone.id);
+      if (index >= 0) {
+        deliveryZonesList[index] = newZone;
+      } else {
+        deliveryZonesList.unshift(newZone);
+      }
+      saveDeliveryZonesToStore(deliveryZonesList);
+      return res.json({ success: true, zones: deliveryZonesList });
+    }
+    res.status(400).json({ error: 'Invalid delivery zones data' });
+  });
+
+  app.post('/api/delivery-zones/reset', (req, res) => {
+    deliveryZonesList = [...DELIVERY_ZONES];
+    saveDeliveryZonesToStore(deliveryZonesList);
+    res.json({ success: true, zones: deliveryZonesList });
+  });
+
   // Orders API
   app.get('/api/orders', (req, res) => {
     const { code, phone } = req.query;
+    const active = ordersList.filter(o => o && o.id && !deletedOrderIds.has(o.id.toLowerCase()) && !o.deletedAt);
     if (code) {
-      const match = ordersList.find(o => o.id.toLowerCase() === String(code).trim().toLowerCase());
+      const match = active.find(o => o.id.toLowerCase() === String(code).trim().toLowerCase());
       return res.json(match ? [match] : []);
     }
     if (phone) {
-      const matches = ordersList.filter(o => o.customerPhone.includes(String(phone).trim()));
+      const matches = active.filter(o => o.customerPhone.includes(String(phone).trim()));
       return res.json(matches);
     }
-    res.json(ordersList);
+    res.json(active);
   });
 
   app.post('/api/orders', (req, res) => {
@@ -315,6 +549,10 @@ async function startServer() {
   });
 
   // Deleted Orders (Recycle Bin) API
+  app.get('/api/deleted-ids', (req, res) => {
+    res.json(Array.from(deletedOrderIds));
+  });
+
   app.get('/api/deleted-orders', (req, res) => {
     res.json(deletedOrdersList);
   });

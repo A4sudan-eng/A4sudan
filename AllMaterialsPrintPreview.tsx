@@ -1,9 +1,8 @@
 import React from 'react';
-import { PrintFileOptions, PrintSides, PrintColor } from '../types';
+import { PrintFileOptions } from '../types';
 import { formatSDG } from '../utils/pricing';
 import { 
-  Layers, FileText, CheckCircle2, Trash2, Plus, Minus, 
-  BookOpen, Sparkles, Printer, Copy, RefreshCw, Palette, GraduationCap
+  Trash2, Plus, Minus, BookOpen, GraduationCap, CheckCircle2
 } from 'lucide-react';
 
 interface AllMaterialsPrintPreviewProps {
@@ -35,87 +34,10 @@ export const AllMaterialsPrintPreview: React.FC<AllMaterialsPrintPreviewProps> =
     return null;
   }, [files, academicPath]);
 
-  const totalOriginalPages = files.reduce((acc, f) => acc + (f.pageCount * f.copies), 0);
-  const totalPrintedSheets = files.reduce((acc, f) => {
-    const sheetsPerCopy = Math.ceil(f.pageCount / (f.pagesPerSheet || 1));
-    const physicalPapers = Math.ceil(sheetsPerCopy / (f.sides === 'double' ? 2 : 1));
-    return acc + (physicalPapers * f.copies);
-  }, 0);
-
-  const totalPaperSavedCount = Math.max(0, totalOriginalPages - totalPrintedSheets);
-  const savingsPercent = totalOriginalPages > 0 
-    ? Math.round((totalPaperSavedCount / totalOriginalPages) * 100) 
-    : 0;
-
-  // Mini paper layout renderer
-  const renderMiniPaperDiagram = (pps: number, color: PrintColor, sides: PrintSides) => {
-    const isColor = color === 'color';
-    const accentBg = isColor ? 'bg-amber-100 border-amber-300' : 'bg-slate-100 border-slate-300';
-    const headerBg = isColor ? 'bg-amber-500' : 'bg-slate-500';
-
-    if (pps === 2) {
-      return (
-        <div className="w-16 h-20 bg-white border-2 border-slate-300 rounded shadow-xs p-1 flex flex-col justify-between relative overflow-hidden shrink-0">
-          <div className={`w-full h-full border rounded-xs ${accentBg} p-1 flex flex-col gap-0.5`}>
-            <div className={`h-1 ${headerBg} rounded-xs w-2/3`} />
-            <div className="space-y-0.5 flex-1">
-              <div className="h-0.5 bg-slate-300 rounded-xs w-full" />
-              <div className="h-0.5 bg-slate-300 rounded-xs w-3/4" />
-              <div className="h-0.5 bg-slate-300 rounded-xs w-full" />
-            </div>
-            <span className="text-[6px] font-bold text-center text-slate-600 block">صفحة 1</span>
-          </div>
-          {sides === 'double' && (
-            <div className="absolute bottom-0.5 left-0.5 bg-emerald-600 text-white text-[6px] font-bold px-1 rounded-xs">
-              2:1 🔄
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (pps === 4) {
-      return (
-        <div className="w-16 h-20 bg-white border-2 border-slate-300 rounded shadow-xs p-1 grid grid-cols-2 gap-0.5 relative overflow-hidden shrink-0">
-          {[1, 2].map(p => (
-            <div key={p} className={`h-full border rounded-xs ${accentBg} p-0.5 flex flex-col justify-between`}>
-              <div className={`h-0.5 ${headerBg} rounded-xs w-full`} />
-              <div className="space-y-0.5">
-                <div className="h-0.5 bg-slate-300 rounded-xs w-full" />
-                <div className="h-0.5 bg-slate-300 rounded-xs w-2/3" />
-              </div>
-              <span className="text-[5px] font-bold text-center text-slate-600 block">{p}</span>
-            </div>
-          ))}
-          {sides === 'double' && (
-            <div className="absolute bottom-0.5 left-0.5 bg-emerald-600 text-white text-[6px] font-bold px-1 rounded-xs">
-              4:1 ⭐
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // pps === 8
-    return (
-      <div className="w-16 h-20 bg-white border-2 border-slate-300 rounded shadow-xs p-1 grid grid-cols-2 grid-rows-2 gap-0.5 relative overflow-hidden shrink-0">
-        {[1, 2, 3, 4].map(p => (
-          <div key={p} className={`h-full border rounded-xs ${accentBg} p-0.5 flex flex-col justify-between`}>
-            <div className={`h-0.5 ${headerBg} rounded-xs w-full`} />
-            <span className="text-[5px] font-bold text-center text-slate-600 block">{p}</span>
-          </div>
-        ))}
-        {sides === 'double' && (
-          <div className="absolute bottom-0.5 left-0.5 bg-emerald-600 text-white text-[5px] font-bold px-0.5 rounded-xs">
-            8:1 🔄
-          </div>
-        )}
-      </div>
-    );
-  };
+  const totalSheetsPrice = files.reduce((acc, f) => acc + (f.calculatedPrice || 0), 0);
 
   return (
-    <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-6 border border-slate-700 shadow-lg space-y-4">
+    <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 border border-slate-700 shadow-lg space-y-4">
       
       {/* Single Unified Academic Pathway Banner */}
       {extractedPath && (
@@ -137,168 +59,102 @@ export const AllMaterialsPrintPreview: React.FC<AllMaterialsPrintPreviewProps> =
         </div>
       )}
 
-      {/* Top Header & Master Total Savings */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-amber-500 text-slate-950 rounded-xl font-bold shrink-0 shadow-sm">
-            <Printer className="w-6 h-6" />
+          <div className="p-2.5 bg-emerald-600 text-white rounded-xl font-bold shrink-0 shadow-sm">
+            <BookOpen className="w-5 h-5" />
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-extrabold text-amber-400 flex items-center gap-2">
-              <span>المعاينة الشاملة والمختصرة لنمط طباعة المواد ({files.length})</span>
-              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>تفاصيل الشيتات ({files.length})</span>
             </h3>
             <p className="text-xs text-slate-300 font-medium mt-0.5">
-              استعراض مرئي مكثف ومبسط لكل المواد المطلوبة لشاشة واحدة بدون إطالة المسافات
+              قائمة الشيتات والمواد المطلوبة مع الأسعار المعتمدة
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 px-3 py-2 rounded-xl text-xs shrink-0 self-start sm:self-auto">
           <div className="text-right">
-            <span className="text-slate-400 block text-[10px]">إجمالي الورق المطبوع فعلياً:</span>
+            <span className="text-slate-400 block text-[10px]">إجمالي قيمة الشيتات:</span>
             <strong className="text-amber-400 font-mono text-sm font-black">
-              {totalPrintedSheets} ورقة
+              {formatSDG(totalSheetsPrice)}
             </strong>
           </div>
-          {savingsPercent > 0 && (
-            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-extrabold px-2 py-1 rounded-lg">
-              توفير {savingsPercent}% 🌱
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Grid of Materials (Compact Layout for Single or Multiple Items) */}
-      <div className={`grid grid-cols-1 ${files.length > 1 ? 'md:grid-cols-2' : 'grid-cols-1'} gap-3.5`}>
-        {files.map((file, idx) => {
-          const pps = file.pagesPerSheet || 1;
-          const calculatedSheets = Math.ceil(file.pageCount / pps);
-          const physicalPapers = Math.ceil(calculatedSheets / (file.sides === 'double' ? 2 : 1));
+      {/* Grid / List of Sheets */}
+      <div className={`grid grid-cols-1 ${files.length > 1 ? 'md:grid-cols-2' : 'grid-cols-1'} gap-3`}>
+        {files.map((file, idx) => (
+          <div 
+            key={file.id}
+            className="bg-slate-800/90 border border-slate-700/80 hover:border-emerald-500/50 rounded-xl p-3.5 flex flex-col justify-between gap-2.5 transition-all relative group"
+          >
+            {/* Sheet Title & Delete button */}
+            <div className="flex items-start justify-between gap-2 border-b border-slate-700/60 pb-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-black flex items-center justify-center shrink-0">
+                  {idx + 1}
+                </span>
+                <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-emerald-300 transition-colors" title={file.fileName}>
+                  {file.fileName}
+                </h4>
+              </div>
 
-          return (
-            <div 
-              key={file.id}
-              className="bg-slate-800/90 border border-slate-700/80 hover:border-amber-500/50 rounded-xl p-3.5 flex flex-col justify-between gap-3 transition-all relative group"
-            >
-              {/* Item Top Bar */}
-              <div className="flex items-start justify-between gap-2 border-b border-slate-700/60 pb-2.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black flex items-center justify-center shrink-0">
-                    {idx + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-amber-300 transition-colors">
-                      {file.fileName}
-                    </h4>
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      {file.pageCount} صفحة أصلية ➔ <strong className="text-amber-300">{physicalPapers} ورقة مطبوعة</strong> (لكل نسخة)
-                    </span>
-                  </div>
-                </div>
+              {!isLibraryOrder && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveFile(file.id)}
+                  className="text-slate-400 hover:text-rose-400 p-1 rounded-lg transition-colors shrink-0"
+                  title="حذف هذه المادة"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
-                {!isLibraryOrder && (
+            {/* Price & Copies Controls */}
+            <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center gap-1.5 text-xs text-slate-300 font-bold">
+                <span>النسخ:</span>
+                <div className="flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded-lg border border-slate-700">
                   <button
                     type="button"
-                    onClick={() => onRemoveFile(file.id)}
-                    className="text-slate-400 hover:text-rose-400 p-1 rounded-lg transition-colors shrink-0"
-                    title="حذف هذه المادة"
+                    onClick={() => onUpdateFileOption(file.id, { copies: Math.max(1, file.copies - 1) })}
+                    className="text-slate-400 hover:text-white p-0.5 transition-colors"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
-                )}
+                  <span className="font-mono text-amber-400 font-black px-1.5">{file.copies}</span>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateFileOption(file.id, { copies: file.copies + 1 })}
+                    className="text-slate-400 hover:text-white p-0.5 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Main Content: Mini Diagram + Specs Controls */}
-              <div className="flex items-center gap-3">
-                
-                {/* Visual Paper Layout Mock */}
-                {renderMiniPaperDiagram(pps, file.color, file.sides)}
-
-                {/* Quick Interactive Spec Switchers */}
-                <div className="flex-1 space-y-2 text-xs">
-                  
-                  {/* Pages Per Sheet Picker */}
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold block mb-1">توزيع الصفحات بالورقة:</span>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {[
-                        { val: 2, label: '2:1 عادي' },
-                        { val: 4, label: '4:1 شائع ⭐' },
-                        { val: 8, label: '8:1 اسلايت' }
-                      ].map(opt => (
-                        <button
-                          type="button"
-                          key={opt.val}
-                          onClick={() => onUpdateFileOption(file.id, { pagesPerSheet: opt.val })}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all border ${
-                            pps === opt.val
-                              ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-xs'
-                              : 'bg-slate-700/80 text-slate-300 border-slate-600 hover:bg-slate-700'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Fixed Printing Specifications (Double-sided Guaranteed) */}
-                  <div className="flex items-center gap-2 flex-wrap text-[11px]">
-                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-1 rounded-lg font-bold flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3 text-emerald-400" />
-                      <span>طباعة وجهين معتمدة 🔄</span>
-                    </span>
-                  </div>
-
-                  {/* Copies Counter */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-700/60">
-                    <div className="flex items-center gap-1 text-[11px] text-slate-300 font-bold">
-                      <span>النسخ:</span>
-                      <div className="flex items-center gap-1 bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => onUpdateFileOption(file.id, { copies: Math.max(1, file.copies - 1) })}
-                          className="text-slate-400 hover:text-white p-0.5"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
-                        <span className="font-mono text-amber-400 font-bold px-1.5">{file.copies}</span>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateFileOption(file.id, { copies: file.copies + 1 })}
-                          className="text-slate-400 hover:text-white p-0.5"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">السعر المستحق:</span>
-                      <strong className="text-amber-400 font-mono text-xs font-bold">
-                        {formatSDG(file.calculatedPrice)}
-                      </strong>
-                    </div>
-                  </div>
-
-                </div>
-
+              <div className="bg-emerald-950/80 border border-emerald-700/80 px-2.5 py-1 rounded-lg text-right">
+                <span className="text-[10px] text-emerald-300 block font-bold">السعر:</span>
+                <strong className="text-amber-300 font-mono text-xs font-black">
+                  {formatSDG(file.calculatedPrice)}
+                </strong>
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
-      {/* Footer Info Ribbon */}
+      {/* Clean Bottom Ribbon */}
       <div className="bg-slate-800/80 border border-slate-700 p-2.5 rounded-xl text-xs text-slate-300 flex items-center justify-between gap-2 flex-wrap font-medium">
         <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-amber-400 shrink-0" />
-          <span>تطبق إعدادات التوزيع والطباعة المحددة أعلاه تلقائياً على كل الشيتات والمستندات قبل الطباعة والتغليف.</span>
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>الشيتات والمذكرات جاهزة للطباعة والتسليم المباشر فور إتمام الطلب.</span>
         </div>
-        <span className="text-emerald-400 font-bold text-[11px] bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60">
-          معاينة مطابقة للنسخ الورقية 100% ✓
-        </span>
       </div>
 
     </div>

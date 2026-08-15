@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, Printer, BookOpen, GraduationCap, Plus, Filter, Building2, 
   Sparkles, Layers, CheckSquare, Square, Check, ChevronLeft, ArrowRight, 
-  UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft
+  UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft,
+  X, MessageCircle, FileUp, AlertCircle, FileQuestion, FileX, Lock, EyeOff
 } from 'lucide-react';
 import { StudySheet, PrintFileOptions } from '../types';
 import { SAMPLE_STUDY_SHEETS } from '../data/initialData';
 import { formatSDG } from '../utils/pricing';
 import neelainLogo from '../assets/images/neelain_exact_logo_1785951359550.jpg';
+import { NEELAIN_COLLEGES, ACADEMIC_LEVELS, getStoredUniversities, UniversityInfo, getStoredAcademicLevels, AcademicLevel, getStoredDegreeTracks, DegreeTrackInfo } from '../data/neelainData';
+import { getUniversitiesFromCloud, subscribeToCloudUniversities, getAcademicLevelsFromCloud, subscribeToCloudAcademicLevels, getDegreeTracksFromCloud, subscribeToCloudDegreeTracks } from '../lib/firebase';
 
 interface SheetsHubProps {
   sheets: StudySheet[];
@@ -21,104 +24,242 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const [selectedDept, setSelectedDept] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
 
+  // Dynamic Universities list from localStorage / defaults
+  const [sudanUnis, setSudanUnis] = useState<UniversityInfo[]>(() => getStoredUniversities());
+  // Dynamic Academic Levels & Semesters from localStorage / defaults
+  const [academicLevels, setAcademicLevels] = useState<AcademicLevel[]>(() => getStoredAcademicLevels());
+  // Dynamic Degree Tracks (Bachelor / Diploma) from localStorage / defaults
+  const [degreeTracks, setDegreeTracks] = useState<DegreeTrackInfo[]>(() => getStoredDegreeTracks());
+
+  useEffect(() => {
+    // 1. Initial fetch from Cloud Firestore & Server API
+    getUniversitiesFromCloud().then(cloudUnis => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUnis(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      } else {
+        fetch('/api/universities')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setSudanUnis(data);
+              try {
+                localStorage.setItem('a4_universities_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Academic Levels
+    getAcademicLevelsFromCloud().then(cloudLevels => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevels(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      } else {
+        fetch('/api/academic-levels')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setAcademicLevels(data);
+              try {
+                localStorage.setItem('a4_academic_levels_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Degree Tracks
+    getDegreeTracksFromCloud().then(cloudTracks => {
+      if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+        setDegreeTracks(cloudTracks);
+        try {
+          localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+        } catch (e) {}
+      } else {
+        fetch('/api/degree-tracks')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setDegreeTracks(data);
+              try {
+                localStorage.setItem('a4_degree_tracks_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // 2. Real-time Firestore subscription (Cross-device and cross-browser)
+    const unsubscribeCloud = subscribeToCloudUniversities((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUnis(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudLevels = subscribeToCloudAcademicLevels((cloudLevels) => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevels(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudTracks = subscribeToCloudDegreeTracks((cloudTracks) => {
+      if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+        setDegreeTracks(cloudTracks);
+        try {
+          localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+        } catch (e) {}
+      }
+    });
+
+    // 3. Local custom event & storage event listener
+    const handleUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setSudanUnis(e.detail);
+      } else {
+        setSudanUnis(getStoredUniversities());
+      }
+    };
+    window.addEventListener('a4_universities_updated', handleUpdate);
+
+    const handleLevelsUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setAcademicLevels(e.detail);
+      } else {
+        setAcademicLevels(getStoredAcademicLevels());
+      }
+    };
+    window.addEventListener('a4_academic_levels_updated', handleLevelsUpdate);
+
+    const handleTracksUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setDegreeTracks(e.detail);
+      } else {
+        setDegreeTracks(getStoredDegreeTracks());
+      }
+    };
+    window.addEventListener('a4_degree_tracks_updated', handleTracksUpdate);
+
+    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('storage', handleLevelsUpdate);
+    window.addEventListener('storage', handleTracksUpdate);
+
+    // 4. Cross-tab BroadcastChannel listener
+    let bc: BroadcastChannel | null = null;
+    let levelsBc: BroadcastChannel | null = null;
+    let tracksBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('a4_universities_channel');
+        bc.onmessage = (ev) => {
+          if (ev?.data?.type === 'UNIVERSITIES_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setSudanUnis(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        levelsBc = new BroadcastChannel('a4_academic_levels_channel');
+        levelsBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'ACADEMIC_LEVELS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setAcademicLevels(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        tracksBc = new BroadcastChannel('a4_degree_tracks_channel');
+        tracksBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'DEGREE_TRACKS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setDegreeTracks(ev.data.list);
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      if (unsubscribeCloud) unsubscribeCloud();
+      if (unsubscribeCloudLevels) unsubscribeCloudLevels();
+      if (unsubscribeCloudTracks) unsubscribeCloudTracks();
+      window.removeEventListener('a4_universities_updated', handleUpdate);
+      window.removeEventListener('a4_academic_levels_updated', handleLevelsUpdate);
+      window.removeEventListener('a4_degree_tracks_updated', handleTracksUpdate);
+      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('storage', handleLevelsUpdate);
+      window.removeEventListener('storage', handleTracksUpdate);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (levelsBc) {
+        try { levelsBc.close(); } catch (e) {}
+      }
+      if (tracksBc) {
+        try { tracksBc.close(); } catch (e) {}
+      }
+    };
+  }, []);
+
   // Active View Mode: 'leader' (دليل الليدر والجامعات) OR 'browse' (المكتبة العامة)
   const [activeMode, setActiveMode] = useState<'leader' | 'browse'>('leader');
 
   // Leader drill-down navigation steps:
   // 'universities' -> 'colleges' -> 'departments' -> 'degree_tracks' -> 'levels' -> 'semesters' -> 'semester_sheets'
-  const [leaderStep, setLeaderStep] = useState<'universities' | 'colleges' | 'departments' | 'degree_tracks' | 'levels' | 'semesters' | 'semester_sheets'>('levels');
+  const [leaderStep, setLeaderStep] = useState<'universities' | 'colleges' | 'departments' | 'degree_tracks' | 'levels' | 'semesters' | 'semester_sheets'>('universities');
 
   const [selectedUni, setSelectedUni] = useState<string>('جامعة النيلين');
-  const [selectedCollege, setSelectedCollege] = useState<string>('كلية التجارة');
-  const [selectedLeaderDept, setSelectedLeaderDept] = useState<string | null>('محاسبة');
+  const [selectedCollege, setSelectedCollege] = useState<string>('كلية علوم الحاسوب وتقانة المعلومات');
+  const [selectedLeaderDept, setSelectedLeaderDept] = useState<string | null>('علوم الحاسوب');
   const [selectedDegreeTrack, setSelectedDegreeTrack] = useState<'bachelor' | 'diploma' | null>('bachelor');
   const [selectedLevelNum, setSelectedLevelNum] = useState<number | null>(1);
   const [selectedSemesterNum, setSelectedSemesterNum] = useState<number | null>(1);
 
-  // Multi-selection state
+  // Multi-selection & Copies state
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => 
     SAMPLE_STUDY_SHEETS.filter(s => s.isAvailable !== false).map(s => s.id)
   );
+  const [sheetCopies, setSheetCopies] = useState<Record<string, number>>({});
+
+  const getCopies = (sheetId: string) => sheetCopies[sheetId] || 1;
+
+  const updateSheetCopies = (sheetId: string, delta: number) => {
+    setSheetCopies(prev => {
+      const current = prev[sheetId] || 1;
+      const updated = Math.max(1, current + delta);
+      return { ...prev, [sheetId]: updated };
+    });
+  };
 
   // New sheet contribution form state
+  const [newCollege, setNewCollege] = useState<string>('كلية علوم الحاسوب وتقانة المعلومات');
   const [newTitle, setNewTitle] = useState('');
-  const [newDept, setNewDept] = useState<'محاسبة' | 'تأمين' | 'إدارة أعمال'>('محاسبة');
+  const [newDept, setNewDept] = useState<string>('علوم الحاسوب');
   const [newSemester, setNewSemester] = useState<number>(1);
   const [newSubject, setNewSubject] = useState('');
   const [newPageCount, setNewPageCount] = useState(30);
   const [newAuthor, setNewAuthor] = useState('');
   const [newDegreeType, setNewDegreeType] = useState<'bachelor' | 'diploma'>('bachelor');
 
-  const departmentsList = [
-    { id: 'all', label: 'جميع الأقسام' },
-    { id: 'محاسبة', label: 'قسم المحاسبة' },
-    { id: 'تأمين', label: 'قسم التأمين' },
-    { id: 'إدارة أعمال', label: 'قسم إدارة الأعمال' },
-  ];
-
-  const semestersList = [
-    { id: 'all', label: 'جميع الفصول' },
-    { id: '1', label: 'الفصل 1 (المستوى 1)' },
-    { id: '2', label: 'الفصل 2 (المستوى 1)' },
-    { id: '3', label: 'الفصل 3 (المستوى 2)' },
-    { id: '4', label: 'الفصل 4 (المستوى 2)' },
-    { id: '5', label: 'الفصل 5 (المستوى 3)' },
-    { id: '6', label: 'الفصل 6 (المستوى 3)' },
-    { id: '7', label: 'الفصل 7 (المستوى 4)' },
-    { id: '8', label: 'الفصل 8 (المستوى 4)' },
-  ];
-
-  const ACADEMIC_LEVELS = [
-    {
-      levelNum: 1,
-      title: 'المستوى الأول',
-      yearLabel: 'السنة الأولى',
-      description: 'يحتوي على الفصل الدراسي الأول والفصل الدراسي الثاني',
-      badge: 'المستوى 1',
-      semesters: [
-        { id: 1, title: 'الفصل الدراسي الأول', label: 'الفصل 1', desc: 'مواد ومذكرات الفصل الدراسي الأول' },
-        { id: 2, title: 'الفصل الدراسي الثاني', label: 'الفصل 2', desc: 'مواد ومذكرات الفصل الدراسي الثاني' },
-      ],
-    },
-    {
-      levelNum: 2,
-      title: 'المستوى الثاني',
-      yearLabel: 'السنة الثانية',
-      description: 'يحتوي على الفصل الدراسي الثالث والفصل الدراسي الرابع',
-      badge: 'المستوى 2',
-      semesters: [
-        { id: 3, title: 'الفصل الدراسي الثالث', label: 'الفصل 3', desc: 'مواد ومذكرات الفصل الدراسي الثالث' },
-        { id: 4, title: 'الفصل الدراسي الرابع', label: 'الفصل 4', desc: 'مواد ومذكرات الفصل الدراسي الرابع' },
-      ],
-    },
-    {
-      levelNum: 3,
-      title: 'المستوى الثالث',
-      yearLabel: 'السنة الثالثة',
-      description: 'يحتوي على الفصل الدراسي الخامس والفصل الدراسي السادس',
-      badge: 'المستوى 3',
-      semesters: [
-        { id: 5, title: 'الفصل الدراسي الخامس', label: 'الفصل 5', desc: 'مواد ومذكرات الفصل الدراسي الخامس' },
-        { id: 6, title: 'الفصل الدراسي السادس', label: 'الفصل 6', desc: 'مواد ومذكرات الفصل الدراسي السادس' },
-      ],
-    },
-    {
-      levelNum: 4,
-      title: 'المستوى الرابع',
-      yearLabel: 'السنة الرابعة (سنة التخرج)',
-      description: 'يحتوي على الفصل الدراسي السابع والفصل الدراسي الثامن',
-      badge: 'المستوى 4 (التخرج)',
-      semesters: [
-        { id: 7, title: 'الفصل الدراسي السابع', label: 'الفصل 7', desc: 'مواد ومذكرات الفصل الدراسي السابع' },
-        { id: 8, title: 'الفصل الدراسي الثامن', label: 'الفصل 8', desc: 'مواد ومذكرات الفصل الدراسي الثامن (التخرج)' },
-      ],
-    },
-  ];
+  // Temporary notice when trying to access disabled level or semester
+  const [inactiveNotice, setInactiveNotice] = useState<string | null>(null);
 
   // Helper to get semester display title
   const getSemesterLabel = (semNum: number | null) => {
     if (!semNum) return 'جميع الفصول الدراسية';
-    for (const level of ACADEMIC_LEVELS) {
+    for (const level of academicLevels) {
       const sem = level.semesters.find(s => s.id === semNum);
       if (sem) {
         return `${sem.title} (${level.title})`;
@@ -126,6 +267,20 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     }
     return `الفصل الدراسي ${semNum}`;
   };
+
+  // Filter lists for Browse Mode
+  const departmentsList = [
+    { id: 'all', label: 'جميع الأقسام' },
+    { id: 'علوم الحاسوب', label: 'علوم الحاسوب' },
+    { id: 'تقانة المعلومات', label: 'تقانة المعلومات' },
+    { id: 'نظم المعلومات', label: 'نظم المعلومات' },
+    { id: 'هندسة البرمجيات', label: 'هندسة البرمجيات' },
+  ];
+
+  const semestersList = [
+    { id: 'all', label: 'جميع الفصول (1 إلى 8)' },
+    ...[1, 2, 3, 4, 5, 6, 7, 8].map(num => ({ id: String(num), label: `الفصل الدراسي ${num}` }))
+  ];
 
   // Filter sheets for Browse Mode
   const filteredSheets = sheets.filter(sheet => {
@@ -141,16 +296,24 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
   // Filter sheets for Leader Mode
   const leaderFilteredSheets = sheets.filter(sheet => {
-    const matchesDept = !selectedLeaderDept || sheet.department === selectedLeaderDept;
+    const matchesCollege = !selectedCollege || !sheet.facultyOrYear || sheet.facultyOrYear.includes(selectedCollege) || selectedCollege.includes(sheet.facultyOrYear);
+    
+    const normalizedSelectedDept = (selectedLeaderDept || '').replace(/^قسم\s+/, '').trim();
+    const normalizedSheetDept = (sheet.department || '').replace(/^قسم\s+/, '').trim();
+    const matchesDept = !selectedLeaderDept || 
+      normalizedSheetDept === normalizedSelectedDept || 
+      normalizedSheetDept.includes(normalizedSelectedDept) || 
+      normalizedSelectedDept.includes(normalizedSheetDept);
+
     const matchesDegree = !selectedDegreeTrack || !sheet.degreeType || sheet.degreeType === selectedDegreeTrack;
     const matchesSemester = !selectedSemesterNum || sheet.semester === selectedSemesterNum;
-    return matchesDept && matchesDegree && matchesSemester;
+    return matchesCollege && matchesDept && matchesDegree && matchesSemester;
   });
 
   const activeSheetsInView = activeMode === 'leader' && leaderStep === 'semester_sheets' ? leaderFilteredSheets : filteredSheets;
   const availableFilteredSheets = activeSheetsInView.filter(s => s.isAvailable !== false);
   const selectedSheetsInView = availableFilteredSheets.filter(s => selectedSheetIds.includes(s.id));
-  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + s.priceEstimate, 0);
+  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + (s.priceEstimate * getCopies(s.id)), 0);
 
   const isAllSelected = availableFilteredSheets.length > 0 && availableFilteredSheets.every(s => selectedSheetIds.includes(s.id));
 
@@ -172,9 +335,9 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
   const buildSheetHierarchyPath = (sheet: StudySheet) => {
     const uni = sheet.institution || selectedUni || 'جامعة النيلين';
-    const college = sheet.facultyOrYear || selectedCollege || 'كلية التجارة';
+    const college = sheet.facultyOrYear || selectedCollege || 'كلية علوم الحاسوب';
     const dept = sheet.department ? `قسم ${sheet.department}` : 'جميع الأقسام';
-    const degree = sheet.degreeType === 'diploma' ? 'دبلوم تقني' : 'بكالوريوس';
+    const degree = sheet.degreeType === 'diploma' ? 'دبلوم' : 'بكالوريوس';
     const sem = sheet.semester ? `الفصل الدراسي ${sheet.semester}` : getSemesterLabel(selectedSemesterNum);
     
     return `${uni} ⬅️ ${college} ⬅️ ${dept} ⬅️ ${degree} ⬅️ ${sem}`;
@@ -182,14 +345,15 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
   const handlePrintSheet = (sheet: StudySheet) => {
     const hierarchy = buildSheetHierarchyPath(sheet);
+    const copies = getCopies(sheet.id);
     onSelectSheetForPrint({
       fileName: `${sheet.title}.pdf`,
       pageCount: sheet.pageCount || 40,
       color: sheet.recommendedColor,
       binding: sheet.recommendedBinding,
       sides: 'double',
-      copies: 1,
-      notes: `شيت من مكتبة الكلية ودليل الليدر | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
+      copies: copies,
+      notes: `شيت من مكتبة الكلية الشاملة | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
     });
   };
 
@@ -201,14 +365,15 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
 
     const optionsList: Partial<PrintFileOptions>[] = selectedSheetsInView.map(sheet => {
       const hierarchy = buildSheetHierarchyPath(sheet);
+      const copies = getCopies(sheet.id);
       return {
         fileName: `${sheet.title}.pdf`,
         pageCount: sheet.pageCount || 40,
         color: sheet.recommendedColor,
         binding: sheet.recommendedBinding,
         sides: 'double',
-        copies: 1,
-        notes: `شيت من دليل الليدر | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
+        copies: copies,
+        notes: `شيت من المكتبة الجامعية | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
       };
     });
 
@@ -223,7 +388,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
       id: `sheet-custom-${Date.now()}`,
       title: newTitle,
       institution: 'جامعة النيلين',
-      facultyOrYear: 'كلية التجارة',
+      facultyOrYear: newCollege,
       department: newDept,
       semester: newSemester,
       degreeType: newDegreeType,
@@ -246,170 +411,22 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     setNewTitle('');
     setNewSubject('');
     setNewAuthor('');
-    alert('تمت إضافة الشيت إلى مكتبة الكلية ودليل الليدر بنجاح!');
+    alert('تمت إضافة الشيت إلى مكتبة الكلية بنجاح!');
   };
 
+  const currentUniObj = sudanUnis.find(u => u.name === selectedUni) || sudanUnis[0];
+  const currentCollegeList = currentUniObj ? currentUniObj.colleges : NEELAIN_COLLEGES;
+  const currentCollegeObj = currentCollegeList.find(c => c.name === selectedCollege) || currentCollegeList[0] || NEELAIN_COLLEGES[0];
+
   return (
-    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6">
+    <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
       
-      {/* Compact Top Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-950 via-emerald-900 to-emerald-950 text-white rounded-2xl px-5 py-3.5 mb-4 border border-emerald-700/60 shadow-md flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-800/90 rounded-xl flex items-center justify-center text-amber-300 font-bold border border-emerald-600 shrink-0">
-            <BookOpen className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
-              <span>مكتبة الجامعات السودانية</span>
-              <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-md">
-                الشيتات والمذكرات
-              </span>
-            </h1>
-            <p className="text-emerald-200/80 text-xs hidden sm:block">
-              تصفح الجامعات والكليات والأقسام والفصول الدراسية للوصول لكافة الشيتات المعتمدة
-            </p>
-          </div>
-        </div>
-
-        {/* Quick University Badge */}
-        <div className="hidden md:flex items-center gap-2 bg-emerald-900/80 px-3 py-1.5 rounded-xl border border-emerald-700/60 text-xs shrink-0">
-          <img 
-            src={neelainLogo} 
-            alt="جامعة النيلين" 
-            className="w-6 h-6 object-contain rounded bg-white p-0.5"
-          />
-          <span className="font-bold text-emerald-100">جامعة النيلين • كلية التجارة</span>
-        </div>
-      </div>
-
       {/* ========================================================================= */}
       {/* LEADER SECTION (قسم الليدر والجامعات والفصول الدراسية)                   */}
       {/* ========================================================================= */}
       {activeMode === 'leader' && (
         <div className="space-y-5 mb-10">
           
-          {/* Prominent & Highly Visible Navigation / Breadcrumbs Bar */}
-          <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border-2 border-emerald-600/30 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-800">
-              <span className="text-emerald-900 font-black flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                <Landmark className="w-4 h-4 text-emerald-700" />
-                <span>مسار الملاحة:</span>
-              </span>
-
-              {/* All Universities / Change University Button */}
-              <button 
-                onClick={() => setLeaderStep('universities')}
-                className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
-                  leaderStep === 'universities' 
-                    ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                    : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                }`}
-              >
-                <span>جميع الجامعات</span>
-              </button>
-
-              {leaderStep !== 'universities' && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('colleges')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'colleges' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {selectedUni}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'departments' || leaderStep === 'degree_tracks' || leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('departments')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'departments' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {selectedCollege}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'degree_tracks' || leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedLeaderDept && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('degree_tracks')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'degree_tracks' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    قسم {selectedLeaderDept}
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'levels' || leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedDegreeTrack && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('levels')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'levels' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    المستويات الأكاديمية
-                  </button>
-                </>
-              )}
-
-              {(leaderStep === 'semesters' || leaderStep === 'semester_sheets') && selectedLevelNum && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <button 
-                    onClick={() => setLeaderStep('semesters')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      leaderStep === 'semesters' 
-                        ? 'bg-emerald-800 text-amber-300 font-black shadow-sm ring-2 ring-emerald-600' 
-                        : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-950 font-bold border border-slate-200'
-                    }`}
-                  >
-                    {ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`}
-                  </button>
-                </>
-              )}
-
-              {leaderStep === 'semester_sheets' && selectedSemesterNum && (
-                <>
-                  <ChevronLeft className="w-4 h-4 text-emerald-600 font-bold" />
-                  <span className="bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl font-black shadow-xs">
-                    {getSemesterLabel(selectedSemesterNum)}
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Direct Button to Switch University */}
-            {leaderStep !== 'universities' && (
-              <button
-                onClick={() => setLeaderStep('universities')}
-                className="bg-emerald-100 hover:bg-emerald-200 text-emerald-950 font-black text-xs px-3 py-1.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 border border-emerald-300 shrink-0"
-              >
-                <Building2 className="w-3.5 h-3.5 text-emerald-700" />
-                <span>تغيير الجامعة</span>
-              </button>
-            )}
-          </div>
-
           {/* STEP 1: UNIVERSITIES LIST (الجامعات) */}
           {leaderStep === 'universities' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
@@ -417,76 +434,100 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-emerald-600" />
-                    <span>جميع الجامعات المتاحة</span>
+                    <span>جميع الجامعات المتاحة ({sudanUnis.length})</span>
                   </h2>
                   <p className="text-xs text-slate-500">
-                    اختر الجامعة لعرض الكليات والأقسام
+                    اختر الجامعة لعرض الكليات والأقسام الدراسية المتاحة
                   </p>
                 </div>
                 <span className="bg-emerald-100 text-emerald-900 font-bold px-2.5 py-0.5 rounded-full text-[11px]">
-                  جامعة 1 متوفرة
+                  {sudanUnis.length} جامعات متوفرة ✓
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {/* Active University: Al Neelain University */}
-                <div 
-                  onClick={() => {
-                    setSelectedUni('جامعة النيلين');
-                    setLeaderStep('colleges');
-                  }}
-                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-500 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="w-10 h-10 bg-white p-1 rounded-xl shadow-xs border border-emerald-400/40 shrink-0">
-                        <img src={neelainLogo} alt="جامعة النيلين" className="w-full h-full object-contain" />
-                      </div>
-                      <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
-                        متوفرة حالياً ✓
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                      جامعة النيلين
-                    </h3>
-                    <p className="text-[11px] text-emerald-200/90 leading-tight">
-                      كلية التجارة والأقسام الأكاديمية كاملة
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                    <span>دخول الكليات</span>
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                  </div>
-                </div>
-
-                {/* Coming Soon Universities */}
-                {['جامعة الخرطوم', 'جامعة السودان للعلوم والتكنولوجيا', 'جامعة بحري'].map((uniName, idx) => (
-                  <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 opacity-75 flex flex-col justify-between space-y-2">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="w-8 h-8 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 font-bold shrink-0">
-                          <Building2 className="w-4 h-4" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {sudanUnis.map((uni) => {
+                  const isNeelain = uni.id === 'neelain';
+                  const isUnavailable = uni.active === false || uni.badge === 'غير متاح الان' || uni.badge?.includes('غير متاح');
+                  return (
+                    <div 
+                      key={uni.id}
+                      onClick={() => {
+                        if (isUnavailable) {
+                          alert(`عذراً، خدمات الشيتات والمكتبة غير متاحة حالياً بـ (${uni.name}).`);
+                          return;
+                        }
+                        setSelectedUni(uni.name);
+                        const firstCol = uni.colleges[0];
+                        if (firstCol) {
+                          setSelectedCollege(firstCol.name);
+                          setSelectedLeaderDept(firstCol.departments[0]?.name || null);
+                        }
+                        setLeaderStep('colleges');
+                      }}
+                      className={`rounded-xl p-4 shadow-sm border transition-all flex flex-col justify-between space-y-3 relative overflow-hidden ${
+                        isUnavailable
+                          ? 'opacity-40 grayscale-[60%] cursor-not-allowed bg-slate-800 text-slate-300 border-rose-500/50 hover:border-rose-500'
+                          : isNeelain 
+                            ? 'bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-md ring-1 ring-amber-400/30 cursor-pointer group hover:border-amber-300' 
+                            : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 cursor-pointer group hover:border-amber-400'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shrink-0 border ${
+                            isUnavailable ? 'bg-rose-950/50 text-rose-300 border-rose-700/50' : 'bg-white/10 text-amber-300 border-emerald-400/30'
+                          }`}>
+                            {isNeelain ? (
+                              <img src={neelainLogo} alt="جامعة النيلين" className="w-full h-full object-contain p-0.5 rounded-lg" />
+                            ) : (
+                              <Building2 className={`w-5 h-5 ${isUnavailable ? 'text-rose-300' : 'text-amber-300'}`} />
+                            )}
+                          </div>
+                          <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs ${
+                            isUnavailable
+                              ? 'bg-rose-600 text-white border border-rose-400'
+                              : 'bg-amber-400 text-slate-950'
+                          }`}>
+                            {isUnavailable ? 'غير متاح الان' : (uni.badge || 'متوفرة حالياً ✓')}
+                          </span>
                         </div>
-                        <span className="bg-slate-200 text-slate-600 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                          قريباً ⏳
-                        </span>
+
+                        <h3 className={`text-base font-black transition-colors ${
+                          isUnavailable ? 'text-slate-300 line-through' : 'text-white group-hover:text-amber-300'
+                        }`}>
+                          {uni.name}
+                        </h3>
+                        <p className={`text-[11px] leading-tight mt-1 ${isUnavailable ? 'text-slate-400' : 'text-emerald-200/90'}`}>
+                          {isUnavailable ? 'هذه الجامعة غير متاحة حالياً لطلبات الشيتات وطباعة المقررات.' : uni.description}
+                        </p>
                       </div>
 
-                      <h3 className="text-sm font-bold text-slate-700">{uniName}</h3>
-                      <p className="text-[11px] text-slate-500 mt-0.5">جاري إعداد الشيتات...</p>
+                      <div className={`flex items-center justify-between pt-2.5 border-t text-[11px] font-bold ${
+                        isUnavailable ? 'border-rose-900/50 text-rose-300' : 'border-emerald-800/80 text-emerald-300'
+                      }`}>
+                        {isUnavailable ? (
+                          <span className="text-rose-300 font-extrabold flex items-center gap-1">
+                            🚫 غير متاحة (مغلقة)
+                          </span>
+                        ) : (
+                          <>
+                            <span>عرض الكليات ({uni.collegesCount})</span>
+                            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* STEP 2: COLLEGES LIST (كليات الجامعة) */}
+          {/* STEP 2: COLLEGES LIST (الكليات المتاحة بالجامعة) */}
           {leaderStep === 'colleges' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
                 <div className="flex items-center gap-2.5">
                   <button 
                     onClick={() => setLeaderStep('universities')}
@@ -497,71 +538,161 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                       <GraduationCap className="w-5 h-5 text-emerald-600" />
-                      <span>{selectedUni} • اختر الكلية</span>
+                      <span>{selectedUni} • اختر الكلية المعتمدة</span>
                     </h2>
                     <p className="text-xs text-slate-500">
-                      الكليات المعتمدة في {selectedUni}
+                      الكليات والبرامج الدراسية (بكالوريوس ودبلوم) المتاحة بـ {selectedUni}
                     </p>
                   </div>
+                </div>
+
+                {/* DEGREE TRACK FILTER BUTTONS */}
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDegreeTrack(null)}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      selectedDegreeTrack === null
+                        ? 'bg-white text-slate-950 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    الكل ({currentCollegeList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDegreeTrack('bachelor')}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      selectedDegreeTrack === 'bachelor'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    🎓 بكالوريوس
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDegreeTrack('diploma')}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                      selectedDegreeTrack === 'diploma'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    📜 دبلوم
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {/* Active College: Faculty of Commerce */}
-                <div 
-                  onClick={() => {
-                    setSelectedCollege('كلية التجارة');
-                    setLeaderStep('departments');
-                  }}
-                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-500 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="w-8 h-8 bg-emerald-800/80 rounded-lg flex items-center justify-center text-emerald-200 font-bold border border-emerald-600/50 shrink-0">
-                        <FolderTree className="w-4 h-4 text-amber-300" />
-                      </div>
-                      <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
-                        متوفرة حالياً ✓
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {currentCollegeList
+                  .filter(col => {
+                    if (!selectedDegreeTrack) return true;
+                    if (selectedDegreeTrack === 'diploma') return col.degreeType === 'diploma' || col.degreeType === 'both';
+                    if (selectedDegreeTrack === 'bachelor') return col.degreeType === 'bachelor' || col.degreeType === 'both' || !col.degreeType;
+                    return true;
+                  })
+                  .map((col) => {
+                    const isCommerce = col.id === 'commerce';
+                    const isCollegeUnavailable = col.active === false || currentUniObj?.active === false;
 
-                    <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                      كلية التجارة
-                    </h3>
-                    <p className="text-[11px] text-emerald-200/90 leading-tight">
-                      المحاسبة، إدارة الأعمال، والتأمين
-                    </p>
-                  </div>
+                    return (
+                      <div 
+                        key={col.id}
+                        onClick={() => {
+                          if (isCollegeUnavailable) {
+                            alert(`عذراً، هذه الكلية (${col.name}) غير متاحة الآن.`);
+                            return;
+                          }
+                          setSelectedCollege(col.name);
+                          setSelectedLeaderDept(col.departments[0]?.name || null);
+                          setLeaderStep('departments');
+                        }}
+                        className={`rounded-xl p-4 shadow-sm border transition-all flex flex-col justify-between space-y-3 relative overflow-hidden ${
+                          isCollegeUnavailable
+                            ? 'opacity-40 grayscale-[60%] cursor-not-allowed bg-slate-800 text-slate-300 border-rose-500/50 hover:border-rose-500'
+                            : isCommerce 
+                              ? 'bg-gradient-to-br from-amber-950 via-emerald-900 to-emerald-950 text-white border-2 border-amber-400 shadow-lg shadow-amber-400/10 ring-2 ring-amber-400/20 sm:col-span-2 cursor-pointer group' 
+                              : 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border-emerald-600 hover:border-amber-400 cursor-pointer group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2 mb-2 pt-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full shadow-xs ${
+                                isCollegeUnavailable
+                                  ? 'bg-rose-600 text-white border border-rose-400'
+                                  : isCommerce 
+                                    ? 'bg-amber-400 text-slate-950 animate-pulse' 
+                                    : 'bg-emerald-800 text-emerald-100'
+                              }`}>
+                                {isCollegeUnavailable ? 'غير متاح الان' : (col.badge || 'معتمدة')}
+                              </span>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                    <span>عرض الأقسام</span>
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                  </div>
-                </div>
+                              {col.degreeType === 'diploma' && (
+                                <span className="bg-purple-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
+                                  📜 دبلوم تقني
+                                </span>
+                              )}
+                              {col.degreeType === 'both' && (
+                                <span className="bg-amber-300 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
+                                  🎓📜 بكالوريوس + دبلوم
+                                </span>
+                              )}
+                              {(col.degreeType === 'bachelor' || !col.degreeType) && (
+                                <span className="bg-emerald-700 text-emerald-100 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                  🎓 بكالوريوس
+                                </span>
+                              )}
+                            </div>
 
-                {/* Coming Soon Colleges */}
-                {['كلية القانون', 'كلية العلوم الإدارية', 'كلية الآداب'].map((colName, idx) => (
-                  <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 opacity-75 flex flex-col justify-between space-y-2">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="w-8 h-8 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 font-bold shrink-0">
-                          <GraduationCap className="w-4 h-4" />
+                            <span className={`font-bold text-[11px] ${isCollegeUnavailable ? 'text-rose-300' : 'text-amber-300'}`}>
+                              {col.departments.length} أقسام تخصصية
+                            </span>
+                          </div>
+
+                          <h3 className={`font-black transition-colors ${
+                            isCollegeUnavailable
+                              ? 'text-lg sm:text-xl text-slate-300 line-through'
+                              : isCommerce 
+                                ? 'text-xl sm:text-2xl text-amber-300 group-hover:text-amber-200' 
+                                : 'text-lg sm:text-xl text-white group-hover:text-amber-300'
+                          }`}>
+                            <span>{col.name}</span>
+                          </h3>
+                          {col.description && (
+                            <p className={`text-xs mt-1 line-clamp-2 ${isCollegeUnavailable ? 'text-slate-400' : 'text-emerald-200/90'}`}>
+                              {isCollegeUnavailable ? 'خدمات المذكرات والشيتات متوقفة حالياً لهذه الكلية.' : col.description}
+                            </p>
+                          )}
                         </div>
-                        <span className="bg-slate-200 text-slate-600 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                          قريباً ⏳
-                        </span>
-                      </div>
 
-                      <h3 className="text-sm font-bold text-slate-700">{colName}</h3>
-                      <p className="text-[11px] text-slate-500 mt-0.5">سيتم رفع مذكراتها قريباً...</p>
-                    </div>
-                  </div>
-                ))}
+                        <div className={`flex items-center justify-between pt-2.5 border-t text-xs font-bold ${
+                          isCollegeUnavailable
+                            ? 'border-rose-900/50 text-rose-300'
+                            : isCommerce 
+                              ? 'border-amber-400/40 text-amber-300' 
+                              : 'border-emerald-800/80 text-emerald-300'
+                        }`}>
+                          {isCollegeUnavailable ? (
+                            <span className="text-rose-300 font-extrabold flex items-center gap-1">
+                              🚫 غير متاح الان (مغلقة)
+                            </span>
+                          ) : (
+                            <>
+                              <span>تصفح أقسام {col.name}</span>
+                              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}
 
-          {/* STEP 3: DEPARTMENTS LIST (أقسام كلية التجارة) */}
+          {/* STEP 3: DEPARTMENTS LIST (أقسام الكلية المختارة) */}
           {leaderStep === 'departments' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -578,98 +709,46 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                       <span>{selectedCollege} • اختر القسم أو التخصص</span>
                     </h2>
                     <p className="text-xs text-slate-500">
-                      الأقسام المعتمدة بكلية التجارة - جامعة النيلين
+                      الأقسام المعتمدة في {selectedCollege}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* 1. Accounting Dept */}
-                <div 
-                  onClick={() => {
-                    setSelectedLeaderDept('محاسبة');
-                    setLeaderStep('degree_tracks');
-                  }}
-                  className="bg-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 bg-emerald-800 rounded-lg flex items-center justify-center text-amber-300 font-black border border-emerald-600/60 shrink-0">
-                        <BookOpen className="w-4 h-4" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(currentCollegeObj?.departments || []).map((dept) => (
+                  <div 
+                    key={dept.id}
+                    onClick={() => {
+                      setSelectedLeaderDept(dept.name);
+                      setLeaderStep('degree_tracks');
+                    }}
+                    className="bg-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-8 h-8 bg-emerald-800 rounded-lg flex items-center justify-center text-amber-300 font-black border border-emerald-600/60 shrink-0">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
+                          {dept.name}
+                        </h3>
                       </div>
-                      <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                        قسم المحاسبة
-                      </h3>
+                      <p className="text-[11px] text-emerald-200/90 leading-tight">
+                        {dept.description}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-emerald-200/90 leading-tight">
-                      مستودع شيتات ومذكرات وتكاليف قسم المحاسبة لكافة الدفعات
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                    <span>اختيار البكالوريوس/الدبلوم</span>
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                  </div>
-                </div>
-
-                {/* 2. Business Administration Dept */}
-                <div 
-                  onClick={() => {
-                    setSelectedLeaderDept('إدارة أعمال');
-                    setLeaderStep('degree_tracks');
-                  }}
-                  className="bg-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 bg-emerald-800 rounded-lg flex items-center justify-center text-amber-300 font-black border border-emerald-600/60 shrink-0">
-                        <Users className="w-4 h-4" />
-                      </div>
-                      <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                        قسم إدارة الأعمال
-                      </h3>
+                    <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
+                      <span>اختيار البكالوريوس / الدبلوم</span>
+                      <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
                     </div>
-                    <p className="text-[11px] text-emerald-200/90 leading-tight">
-                      شيتات ومواد إدارة التنظيم والتسويق والموارد البشرية
-                    </p>
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                    <span>اختيار البكالوريوس/الدبلوم</span>
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                  </div>
-                </div>
-
-                {/* 3. Insurance Dept */}
-                <div 
-                  onClick={() => {
-                    setSelectedLeaderDept('تأمين');
-                    setLeaderStep('degree_tracks');
-                  }}
-                  className="bg-emerald-900 text-white rounded-xl p-3.5 shadow-sm border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group flex flex-col justify-between space-y-2"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-8 h-8 bg-emerald-800 rounded-lg flex items-center justify-center text-amber-300 font-black border border-emerald-600/60 shrink-0">
-                        <ShieldAlert className="w-4 h-4" />
-                      </div>
-                      <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                        قسم التأمين
-                      </h3>
-                    </div>
-                    <p className="text-[11px] text-emerald-200/90 leading-tight">
-                      مذكرات ومواد إدارة المخاطر والتأمين التجاري والإسلامي
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-emerald-800/80 text-[11px] font-bold text-emerald-300">
-                    <span>اختيار البكالوريوس/الدبلوم</span>
-                    <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* STEP 4: DEGREE TRACKS (بكالوريوس / دبلوم تقني) */}
+          {/* STEP 4: DEGREE TRACKS (بكالوريوس / دبلوم) */}
           {leaderStep === 'degree_tracks' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -683,58 +762,60 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                       <Award className="w-5 h-5 text-emerald-600" />
-                      <span>قسم {selectedLeaderDept} • اختر الدرجة العلمية</span>
+                      <span>{selectedCollege} ({selectedLeaderDept}) • اختر الدرجة العلمية</span>
                     </h2>
                     <p className="text-xs text-slate-500">
-                      اختر المسار الأكاديمي لعرض الفصول الدراسية الخاصة به
+                      اختر المسار الأكاديمي (طلاب البكالوريوس والدبلوم فقط)
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-w-2xl mx-auto">
                 {/* 1. Bachelor Track */}
                 <div 
                   onClick={() => {
                     setSelectedDegreeTrack('bachelor');
                     setLeaderStep('levels');
                   }}
-                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-4 border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group text-center space-y-2 shadow-sm"
+                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-5 border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group text-center space-y-2.5 shadow-sm"
                 >
-                  <div className="w-10 h-10 bg-emerald-800 rounded-xl flex items-center justify-center text-amber-300 mx-auto border border-emerald-600">
-                    <GraduationCap className="w-5 h-5" />
+                  <div className="w-12 h-12 bg-emerald-800 rounded-xl flex items-center justify-center text-amber-300 mx-auto border border-emerald-600">
+                    <GraduationCap className="w-6 h-6" />
                   </div>
                   <h3 className="text-lg font-black text-white group-hover:text-amber-300 transition-colors">
                     بكالوريوس
                   </h3>
                   <p className="text-xs text-emerald-200/90">
-                    4 مستويات دراسية (8 فصول)
+                    {currentCollegeObj?.levelsCount === 5 
+                      ? '5 مستويات دراسية (10 فصول - بكالوريوس الشرف)' 
+                      : '4 مستويات دراسية معتمدة (8 فصول دراسية)'}
                   </p>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-400 text-slate-950 font-black rounded-lg text-xs">
-                    <span>عرض المستويات</span>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 text-slate-950 font-black rounded-lg text-xs">
+                    <span>{currentCollegeObj?.levelsCount === 5 ? 'عرض المستويات الخمسة (5)' : 'عرض المستويات الأربعة (4)'}</span>
                     <ArrowLeft className="w-3.5 h-3.5" />
                   </span>
                 </div>
 
-                {/* 2. Technical Diploma Track */}
+                {/* 2. Diploma Track */}
                 <div 
                   onClick={() => {
                     setSelectedDegreeTrack('diploma');
                     setLeaderStep('levels');
                   }}
-                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-4 border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group text-center space-y-2 shadow-sm"
+                  className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white rounded-xl p-5 border border-emerald-600 hover:border-amber-400 transition-all cursor-pointer group text-center space-y-2.5 shadow-sm"
                 >
-                  <div className="w-10 h-10 bg-emerald-800 rounded-xl flex items-center justify-center text-amber-300 mx-auto border border-emerald-600">
-                    <Award className="w-5 h-5" />
+                  <div className="w-12 h-12 bg-emerald-800 rounded-xl flex items-center justify-center text-amber-300 mx-auto border border-emerald-600">
+                    <Award className="w-6 h-6" />
                   </div>
                   <h3 className="text-lg font-black text-white group-hover:text-amber-300 transition-colors">
-                    دبلوم تقني
+                    دبلوم
                   </h3>
                   <p className="text-xs text-emerald-200/90">
-                    مستويان دراسيان (4 فصول)
+                    مستويان دراسيان معتمدان (4 فصول دراسية)
                   </p>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-amber-400 text-slate-950 font-black rounded-lg text-xs">
-                    <span>عرض المستويات</span>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 text-slate-950 font-black rounded-lg text-xs">
+                    <span>عرض مستويات الدبلوم</span>
                     <ArrowLeft className="w-3.5 h-3.5" />
                   </span>
                 </div>
@@ -742,7 +823,32 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
             </div>
           )}
 
-          {/* STEP 5: ACADEMIC LEVELS (المستويات الأربعة) */}
+          {/* Temporary Notice Modal/Banner when clicking an inactive Level/Semester */}
+          {inactiveNotice && (
+            <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between gap-3 animate-in fade-in zoom-in-95">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-900/80 border border-rose-500/50 flex items-center justify-center text-rose-300 shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-rose-300 flex items-center gap-1.5">
+                    <span>تنبيه: محتوى غير متاح مؤقتاً</span>
+                  </h4>
+                  <p className="text-xs text-rose-100 font-medium mt-0.5">
+                    {inactiveNotice}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setInactiveNotice(null)}
+                className="px-3 py-1.5 bg-rose-800 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          )}
+
+          {/* STEP 5: ACADEMIC LEVELS (المستويات) */}
           {leaderStep === 'levels' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -756,51 +862,81 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                       <Layers className="w-5 h-5 text-emerald-600" />
-                      <span>المستويات الأكاديمية (كلية التجارة - قسم {selectedLeaderDept} - {selectedDegreeTrack === 'bachelor' ? 'بكالوريوس' : 'دبلوم تقني'})</span>
+                      <span>
+                        المستويات الدراسية ({selectedCollege} - {selectedLeaderDept} - {selectedDegreeTrack === 'bachelor' ? 'بكالوريوس' : 'دبلوم'})
+                      </span>
                     </h2>
                     <p className="text-xs text-slate-500">
-                      اختر المستوى الأكاديمي لعرض الفصول الدراسية
+                      اختر المستوى الأكاديمي للانتقال للفصول الدراسية
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {ACADEMIC_LEVELS
-                  .filter(lvl => selectedDegreeTrack === 'diploma' ? lvl.levelNum <= 2 : true)
-                  .map((lvl) => (
-                    <div
-                      key={lvl.levelNum}
-                      onClick={() => {
-                        setSelectedLevelNum(lvl.levelNum);
-                        setLeaderStep('semesters');
-                      }}
-                      className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600/80 hover:border-amber-400 rounded-xl p-3.5 transition-all cursor-pointer group shadow-xs flex flex-col justify-between space-y-2.5"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="bg-amber-400 text-slate-950 font-extrabold text-[11px] px-2 py-0.5 rounded-md shadow-xs">
-                            {lvl.badge}
-                          </span>
-                          <span className="text-[10px] text-emerald-300 font-bold">
-                            {lvl.yearLabel}
-                          </span>
+                {academicLevels
+                  .filter(lvl => selectedDegreeTrack === 'diploma' ? lvl.levelNum <= 2 : lvl.levelNum <= (currentCollegeObj?.levelsCount || 4))
+                  .map((lvl) => {
+                    const isLvlActive = lvl.active !== false;
+                    return (
+                      <div
+                        key={lvl.levelNum}
+                        onClick={() => {
+                          if (!isLvlActive) {
+                            setInactiveNotice(`⚠️ هذا المستوى الدراسي (${lvl.title}) مغلق وموقوف حالياً من قِبل إدارة المنصة ولا يمكن للطلاب الدخول إليه.`);
+                            return;
+                          }
+                          setSelectedLevelNum(lvl.levelNum);
+                          setLeaderStep('semesters');
+                        }}
+                        className={`rounded-xl p-3.5 transition-all shadow-xs flex flex-col justify-between space-y-2.5 relative overflow-hidden ${
+                          isLvlActive
+                            ? 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600/80 hover:border-amber-400 cursor-pointer group'
+                            : 'bg-slate-900/90 text-slate-300 border-2 border-dashed border-rose-500/60 opacity-75 cursor-not-allowed group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-md shadow-xs ${
+                              isLvlActive ? 'bg-amber-400 text-slate-950' : 'bg-rose-950 text-rose-300 border border-rose-500/50'
+                            }`}>
+                              {isLvlActive ? lvl.badge : `${lvl.badge} (مغلق)`}
+                            </span>
+                            {isLvlActive ? (
+                              <span className="text-[10px] text-emerald-300 font-bold">
+                                {lvl.yearLabel}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-black bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                <Lock className="w-3 h-3" />
+                                <span>غير متاح الآن ⏸️</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-black transition-colors ${
+                            isLvlActive ? 'text-white group-hover:text-amber-300' : 'text-slate-300'
+                          }`}>
+                            {lvl.title}
+                          </h3>
+                          <p className={`text-[11px] leading-tight ${
+                            isLvlActive ? 'text-emerald-100/85' : 'text-slate-400'
+                          }`}>
+                            {lvl.description}
+                          </p>
                         </div>
 
-                        <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                          {lvl.title}
-                        </h3>
-                        <p className="text-[11px] text-emerald-100/85 leading-tight">
-                          {lvl.description}
-                        </p>
+                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] font-bold ${
+                          isLvlActive
+                            ? 'border-emerald-800/80 text-amber-300 group-hover:translate-x-[-2px] transition-transform'
+                            : 'border-slate-800 text-rose-400'
+                        }`}>
+                          <span>{isLvlActive ? 'عرض الفصول الدراسية' : 'المستوى موقوف حالياً'}</span>
+                          {isLvlActive ? <ArrowLeft className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        </div>
                       </div>
-
-                      <div className="pt-2 border-t border-emerald-800/80 flex items-center justify-between text-[11px] font-bold text-amber-300 group-hover:translate-x-[-2px] transition-transform">
-                        <span>عرض الفصول</span>
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                      </div>
-                    </div>
-                ))}
+                    );
+                })}
               </div>
             </div>
           )}
@@ -820,55 +956,91 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                     <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                       <BookOpen className="w-5 h-5 text-emerald-600" />
                       <span>
-                        فصول {ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`} ({ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.yearLabel})
+                        فصول {academicLevels.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`} ({selectedCollege} - {selectedLeaderDept})
                       </span>
                     </h2>
                     <p className="text-xs text-slate-500">
-                      اختر الفصل الدراسي لعرض الشيتات والمذكرات المقررة
+                      اختر الفصل الدراسي للوصول للشيتات والمذكرات المقررة
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.semesters || []).map((sem) => (
-                  <div
-                    key={sem.id}
-                    onClick={() => {
-                      setSelectedSemesterNum(sem.id);
-                      setLeaderStep('semester_sheets');
-                    }}
-                    className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600 hover:border-amber-400 rounded-xl p-3.5 transition-all cursor-pointer group shadow-xs flex flex-col justify-between space-y-2"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="bg-amber-400 text-slate-950 font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs">
-                          {sem.label}
-                        </span>
-                        <span className="text-[11px] text-emerald-300 font-bold">
-                          قسم {selectedLeaderDept}
-                        </span>
+                {(() => {
+                  const currentLvl = academicLevels.find(l => l.levelNum === selectedLevelNum);
+                  const isParentLevelActive = currentLvl?.active !== false;
+                  return (currentLvl?.semesters || []).map((sem) => {
+                    const isSemActive = isParentLevelActive && sem.active !== false;
+                    return (
+                      <div
+                        key={sem.id}
+                        onClick={() => {
+                          if (!isSemActive) {
+                            setInactiveNotice(`⚠️ هذا الفصل الدراسي (${sem.title}) مغلق وموقوف حالياً من قِبل إدارة المنصة ولا يمكن للطلاب الدخول إليه.`);
+                            return;
+                          }
+                          setSelectedSemesterNum(sem.id);
+                          setLeaderStep('semester_sheets');
+                        }}
+                        className={`rounded-xl p-3.5 transition-all shadow-xs flex flex-col justify-between space-y-2 relative overflow-hidden ${
+                          isSemActive
+                            ? 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600 hover:border-amber-400 cursor-pointer group'
+                            : 'bg-slate-900/90 text-slate-300 border-2 border-dashed border-rose-500/60 opacity-75 cursor-not-allowed group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs ${
+                              isSemActive ? 'bg-amber-400 text-slate-950' : 'bg-rose-950 text-rose-300 border border-rose-500/50'
+                            }`}>
+                              {isSemActive ? sem.label : `${sem.label} (مغلق)`}
+                            </span>
+                            {isSemActive ? (
+                              <span className="text-[11px] text-emerald-300 font-bold">
+                                قسم {selectedLeaderDept}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-black bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                <Lock className="w-3 h-3" />
+                                <span>غير متاح الآن ⏸️</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base sm:text-lg font-black transition-colors ${
+                            isSemActive ? 'text-white group-hover:text-amber-300' : 'text-slate-300'
+                          }`}>
+                            {sem.title}
+                          </h3>
+                          <p className={`text-[11px] leading-tight ${
+                            isSemActive ? 'text-emerald-100/90' : 'text-slate-400'
+                          }`}>
+                            {sem.desc}
+                          </p>
+                        </div>
+
+                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] font-bold ${
+                          isSemActive
+                            ? 'border-emerald-800/80 text-amber-300'
+                            : 'border-slate-800 text-rose-400'
+                        }`}>
+                          <span>{isSemActive ? 'عرض المواد والشيتات' : 'الفصل الدراسي موقوف حالياً'}</span>
+                          {isSemActive ? (
+                            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                          ) : (
+                            <Lock className="w-3.5 h-3.5" />
+                          )}
+                        </div>
                       </div>
-
-                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-amber-300 transition-colors">
-                        {sem.title}
-                      </h3>
-                      <p className="text-[11px] text-emerald-100/90 leading-tight">
-                        {sem.desc}
-                      </p>
-                    </div>
-
-                    <div className="pt-2 border-t border-emerald-800/80 flex items-center justify-between text-[11px] font-bold text-amber-300">
-                      <span>عرض مواد الفصل</span>
-                      <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                    </div>
-                  </div>
-                ))}
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}
 
-          {/* STEP 7: SEMESTER SHEETS (عرض الشيتات والمواد للفصل الدراسي المختار) */}
+          {/* STEP 7: SEMESTER SHEETS (عرض الشيتات والمواد للفصل الدراسي) */}
           {leaderStep === 'semester_sheets' && (
             <div className="space-y-4">
               
@@ -880,21 +1052,21 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                   </span>
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-white">
-                      شيتات ومذكرات {getSemesterLabel(selectedSemesterNum)}
+                      شيتات {getSemesterLabel(selectedSemesterNum)}
                     </h2>
                     <p className="text-[11px] text-emerald-200">
-                      قسم {selectedLeaderDept} • {selectedDegreeTrack === 'bachelor' ? 'بكالوريوس' : 'دبلوم تقني'}
+                      {selectedCollege} • قسم {selectedLeaderDept} • {selectedDegreeTrack === 'bachelor' ? 'بكالوريوس' : 'دبلوم'}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <button 
-                    onClick={() => setLeaderStep('levels')}
+                    onClick={() => setLeaderStep('semesters')}
                     className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer flex items-center gap-1.5"
                   >
                     <ArrowRight className="w-3.5 h-3.5" />
-                    <span>تغيير المستوى</span>
+                    <span>تغيير الفصل</span>
                   </button>
                 </div>
               </div>
@@ -955,7 +1127,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                 </div>
               )}
 
-              {/* Sheets Grid - Compact Cards */}
+              {/* Sheets Grid OR Prominent A4 Sudan Help Box when Empty */}
               {leaderFilteredSheets.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
                   {leaderFilteredSheets.map(sheet => {
@@ -1013,58 +1185,104 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                           </h3>
 
                           <div className="text-[11px] text-slate-500 space-y-0.5 mb-3">
-                            <p className="truncate">المادة: <strong className="text-slate-700">{sheet.subject}</strong> (قسم {sheet.department})</p>
+                            <p className="truncate">المادة: <strong className="text-slate-700">{sheet.subject}</strong> ({sheet.department})</p>
                             {sheet.authorOrLecturer && (
                               <p className="truncate">المحاضر: <strong className="text-slate-700">{sheet.authorOrLecturer}</strong></p>
                             )}
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5" onClick={e => e.stopPropagation()}>
                           <div>
                             <span className="text-[10px] text-slate-400 block">السعر:</span>
-                            <strong className="text-emerald-900 font-black text-sm sm:text-base">
-                              {formatSDG(sheet.priceEstimate)}
+                            <strong className="text-emerald-900 font-black text-xs sm:text-sm">
+                              {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
                             </strong>
                           </div>
 
-                          <button
-                            onClick={() => isAvailable && handlePrintSheet(sheet)}
-                            disabled={!isAvailable}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                            <span>اطبع</span>
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {isAvailable && (
+                              <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                <button
+                                  type="button"
+                                  onClick={() => updateSheetCopies(sheet.id, -1)}
+                                  className="w-5 h-5 bg-white hover:bg-slate-200 text-slate-800 rounded font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                                  title="إنقاص عدد النسخ"
+                                >
+                                  -
+                                </button>
+                                <span className="w-5 text-center text-slate-900 font-black text-xs">
+                                  {getCopies(sheet.id)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateSheetCopies(sheet.id, 1)}
+                                  className="w-5 h-5 bg-emerald-800 hover:bg-emerald-900 text-amber-300 rounded font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                                  title="زيادة عدد النسخ"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+
+                            <button
+                              onClick={() => isAvailable && handlePrintSheet(sheet)}
+                              disabled={!isAvailable}
+                              className={`font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors ${
+                                isAvailable 
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
+                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>اطبع</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="text-center py-8 px-4 bg-white rounded-2xl border border-slate-200 shadow-xs max-w-xl mx-auto">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-3 text-emerald-700">
-                    <BookOpen className="w-6 h-6 text-emerald-700" />
+                /* A4 SUDAN HELPFUL REQUEST BOX */
+                <div className="text-center py-8 sm:py-10 px-5 sm:px-8 bg-gradient-to-br from-emerald-950 via-emerald-900 to-emerald-950 rounded-3xl border-2 border-emerald-500/80 shadow-xl max-w-2xl mx-auto space-y-5 text-white my-4 relative overflow-hidden">
+                  
+                  {/* Background accent */}
+                  <div className="absolute -top-10 -right-10 w-36 h-36 bg-amber-400/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                  <div className="w-14 h-14 bg-amber-400 text-slate-950 rounded-2xl flex items-center justify-center mx-auto font-black shadow-lg shadow-amber-400/20 border-2 border-amber-300">
+                    <FileQuestion className="w-7 h-7" />
                   </div>
-                  <h3 className="text-lg font-black text-slate-900 mb-1">
-                    {getSemesterLabel(selectedSemesterNum)} - كلية التجارة
-                  </h3>
-                  <p className="text-slate-600 text-xs leading-relaxed mb-4">
-                    تم تجهيز هذا الفصل الدراسي لـ (<strong>قسم {selectedLeaderDept}</strong>). يمكنك إضافة الشيتات أو المذكرات لتجهيزها وطباعتها فوراً!
+
+                  <div>
+                    <span className="inline-block bg-emerald-800 text-emerald-100 font-bold text-xs px-3.5 py-1 rounded-full mb-3 border border-emerald-600/80">
+                      {selectedUni} • {selectedCollege} • {(selectedLeaderDept || '').startsWith('قسم') ? selectedLeaderDept : `قسم ${selectedLeaderDept}`} • {getSemesterLabel(selectedSemesterNum)}
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-black text-amber-300">
+                      عفواً، لم تتوفر شيتات هذا الفصل 📚
+                    </h3>
+                  </div>
+
+                  <p className="text-emerald-100/90 text-xs sm:text-sm leading-relaxed max-w-lg mx-auto">
+                    ساعد <strong className="text-amber-300 font-black">A4 Sudan</strong> في توفير شيتات هذا الفصل واحصل على <strong className="text-amber-300 font-bold">300 ورقة مطبوعة هدية 🎁</strong>!
                   </p>
 
-                  <button
-                    onClick={() => {
-                      setNewDept((selectedLeaderDept as any) || 'محاسبة');
-                      setNewDegreeType(selectedDegreeTrack || 'bachelor');
-                      setNewSemester(selectedSemesterNum || 1);
-                      setShowUploadModal(true);
-                    }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>إضافة أول شيت لـ {getSemesterLabel(selectedSemesterNum)}</span>
-                  </button>
+                  <div className="flex justify-center pt-2">
+                    {/* Single Button: A4 Sudan Assistance */}
+                    <a
+                      href={`https://wa.me/249119636365?text=${encodeURIComponent(`السلام عليكم فريق A4 Sudan، أود المساعدة في توفير شيتات ومذكرات (${selectedUni} - ${selectedCollege} - ${selectedLeaderDept} - ${getSemesterLabel(selectedSemesterNum)} - ${selectedDegreeTrack === 'bachelor' ? 'بكالوريوس' : 'دبلوم'})`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full sm:w-auto bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-8 py-3.5 rounded-2xl text-sm inline-flex items-center justify-center gap-2.5 transition-all shadow-lg shadow-amber-400/25 cursor-pointer text-center hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <MessageCircle className="w-5 h-5 text-slate-950" />
+                      <span>ساعد A4 Sudan واحصل على 300 ورقة مطبوعة هدية 🎁</span>
+                    </a>
+                  </div>
+
+                  <p className="text-[11px] text-emerald-300/80 pt-1">
+                    * طباعة فاخرة، وتوصيل سريع حتى باب القاعة أو المنزل.
+                  </p>
                 </div>
               )}
 
@@ -1326,10 +1544,6 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                               {isSelected ? '✓ مادة مضافة للإجمالي' : 'غير مضافة'}
                             </strong>
                           </div>
-                          <div className="flex justify-between">
-                            <span>نوع الطباعة والتغليف:</span>
-                            <strong className="text-slate-800">أبيض وأسود + سلك حلزوني</strong>
-                          </div>
                         </div>
                       ) : (
                         <div className="bg-rose-50/80 p-3 rounded-xl border border-rose-100 text-xs text-rose-800 font-bold mb-4">
@@ -1339,32 +1553,59 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                     </div>
 
                     {/* Price & Action */}
-                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2" onClick={e => e.stopPropagation()}>
                       <div>
                         <span className="text-[11px] text-slate-400 block">السعر:</span>
                         {isAvailable ? (
-                          <strong className="text-emerald-900 font-black text-base sm:text-lg">
-                            {formatSDG(sheet.priceEstimate)}
+                          <strong className="text-emerald-900 font-black text-sm sm:text-base">
+                            {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
                           </strong>
                         ) : (
-                          <strong className="text-rose-600 font-bold text-sm">
+                          <strong className="text-rose-600 font-bold text-xs">
                             غير متوفرة
                           </strong>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => isAvailable && handlePrintSheet(sheet)}
-                        disabled={!isAvailable}
-                        className={`font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm ${
-                          isAvailable 
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
-                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                        }`}
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>{isAvailable ? 'اطبع المادة فقط' : 'غير متوفرة'}</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {isAvailable && (
+                          <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <span className="text-[10px] font-bold text-slate-600 px-1 hidden sm:inline">النسخ:</span>
+                            <button
+                              type="button"
+                              onClick={() => updateSheetCopies(sheet.id, -1)}
+                              className="w-6 h-6 bg-white hover:bg-slate-200 text-slate-800 rounded-lg font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                              title="إنقاص عدد النسخ"
+                            >
+                              -
+                            </button>
+                            <span className="w-5 text-center text-slate-900 font-black text-xs">
+                              {getCopies(sheet.id)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateSheetCopies(sheet.id, 1)}
+                              className="w-6 h-6 bg-emerald-800 hover:bg-emerald-900 text-amber-300 rounded-lg font-black flex items-center justify-center cursor-pointer text-xs shadow-2xs"
+                              title="زيادة عدد النسخ"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => isAvailable && handlePrintSheet(sheet)}
+                          disabled={!isAvailable}
+                          className={`font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-xs ${
+                            isAvailable 
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer' 
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>{isAvailable ? 'اطبع المادة فقط' : 'غير متوفرة'}</span>
+                        </button>
+                      </div>
                     </div>
 
                   </div>
@@ -1386,6 +1627,60 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
             </div>
           )}
         </>
+      )}
+
+      {/* Help Us Provide Sheets Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 relative animate-in fade-in zoom-in-95 duration-150">
+            {/* Close Button */}
+            <button 
+              onClick={() => setShowUploadModal(false)}
+              className="absolute top-4 left-4 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-3 mb-6">
+              <div className="w-14 h-14 bg-emerald-100 text-emerald-800 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <FileUp className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900">
+                مساعدتنا في توفير الشيتات والمذكرات
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                شكراً لمبادرتك! يمكنك إرسال الشيتات أو المذكرات الخاصة بـ (<strong>قسم {selectedLeaderDept} - {getSemesterLabel(selectedSemesterNum)}</strong>) مباشرة لفريق المكتبة.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Option 1: Direct WhatsApp */}
+              <a
+                href={`https://wa.me/249119636365?text=${encodeURIComponent(`مرحباً إدارة مكتبة A4 Sudan، أود مساعدتكم في توفير شيتات ومذكرات (قسم ${selectedLeaderDept} - ${getSemesterLabel(selectedSemesterNum)} - كلية التجارة جامعة النيلين)`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 px-4 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all shadow-md cursor-pointer text-center"
+              >
+                <MessageCircle className="w-5 h-5 text-emerald-200 shrink-0" />
+                <span>إرسال الشيتات عبر واتساب المكتبة المباشر 📱</span>
+              </a>
+
+              {/* Option 2: Note */}
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl text-center">
+                <p className="text-[11px] text-slate-600 font-medium">
+                  سيتم مراجعة المذكرات والشيتات وفحصها وإضافتها فوراً لجميع زملائك بالجامعة.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer mt-2"
+              >
+                إغلاق النافذة
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

@@ -41,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Logo & Brand Name */}
           <div 
-            onClick={() => setCurrentView('home')}
+            onClick={() => setCurrentView('sheets')}
             className="flex items-center gap-3 cursor-pointer group"
           >
             <img
@@ -102,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
               <Search className="w-4 h-4" />
               <span>متابعة الطلبات</span>
               {activeOrderCount > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                <span className="bg-red-600 text-white text-xs font-black px-2 py-0.5 rounded-full shadow-md animate-pulse">
                   {activeOrderCount}
                 </span>
               )}
@@ -158,7 +158,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Search className="w-3.5 h-3.5" />
             <span>تتبع الطلب</span>
             {activeOrderCount > 0 && (
-              <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 rounded-full">
+              <span className="bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-xs animate-pulse">
                 {activeOrderCount}
               </span>
             )}

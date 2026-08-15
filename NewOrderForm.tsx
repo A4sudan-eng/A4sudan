@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Upload, FileText, Trash2, Plus, Check, MapPin, Phone, User, 
-  CreditCard, Truck, Store, Info, Sparkles, Download, Copy, AlertCircle, FileCheck,
+  CreditCard, Truck, Store, Info, Download, Copy, AlertCircle, FileCheck,
   Camera, Image as ImageIcon, X, Tag, BookOpen, GraduationCap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -9,10 +9,10 @@ import { PrintFileOptions, PrintOrder, PricingRates, PaperSize, PrintColor, Prin
 import { calculateFilePrice, formatSDG } from '../utils/pricing';
 import { countPdfPages } from '../utils/pdfCounter';
 import { DELIVERY_ZONES } from '../data/initialData';
+import { getStoredDeliveryZones, fetchServerDeliveryZones } from '../utils/deliveryManager';
 import { saveOrderToCloud, auth } from '../lib/firebase';
 import { DeliveryRatesGuide } from './DeliveryRatesGuide';
-import { SheetLayoutPreview } from './SheetLayoutPreview';
-import { AllMaterialsPrintPreview } from './AllMaterialsPrintPreview';
+import { SUDAN_UNIVERSITIES } from '../data/neelainData';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -29,13 +29,14 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [files, setFiles] = useState<PrintFileOptions[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerPhone2, setCustomerPhone2] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [institution, setInstitution] = useState('');
   const [specialization, setSpecialization] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('delivery');
-  const [city, setCity] = useState(DELIVERY_ZONES[0].zoneName);
+  const [city, setCity] = useState('');
   const [addressOrCampus, setAddressOrCampus] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bankak');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [bankakTransactionId, setBankakTransactionId] = useState('');
   const [bankakProofUrl, setBankakProofUrl] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
@@ -44,7 +45,26 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedAccNum, setCopiedAccNum] = useState<string | null>(null);
   const [showDeliveryGuideModal, setShowDeliveryGuideModal] = useState(false);
-  const [previewMode, setPreviewMode] = useState<'compact' | 'detailed'>('compact');
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
+
+  React.useEffect(() => {
+    fetchServerDeliveryZones().then(zones => {
+      if (zones && zones.length > 0) {
+        setDeliveryZones(zones);
+      }
+    });
+
+    const handleDeliveryZonesUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail.zones)) {
+        setDeliveryZones(e.detail.zones);
+      } else {
+        setDeliveryZones(getStoredDeliveryZones());
+      }
+    };
+
+    window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+    return () => window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+  }, []);
 
   // Coupon state & handlers
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -388,8 +408,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const totalPagesSum = files.reduce((acc, f) => acc + (f.pageCount * f.copies), 0);
   const totalPrintedSheetsSum = files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0);
   const subtotalSum = files.reduce((acc, f) => acc + f.calculatedPrice, 0);
-  const selectedZone = DELIVERY_ZONES.find(z => z.zoneName === city || city.includes(z.zoneName));
-  const deliveryFee = deliveryMethod === 'pickup' ? 0 : (selectedZone?.fee ?? rates.deliveryFees[city] ?? 5000);
+  
+  const activeDeliveryZones = useMemo(() => deliveryZones.filter(z => z.isActive !== false), [deliveryZones]);
+  const selectedZone = city ? activeDeliveryZones.find(z => z.zoneName === city || z.id === city || city.includes(z.zoneName) || (z.neighborhood && city.includes(z.neighborhood))) : undefined;
+  const deliveryFee = deliveryMethod === 'pickup' ? 0 : (selectedZone?.fee ?? (city ? (rates.deliveryFees[city] ?? 5000) : 0));
   const discountAmount = appliedCoupon ? Math.round((subtotalSum * appliedCoupon.discountPercentage) / 100) : 0;
   const totalAmount = Math.max(0, subtotalSum - discountAmount + deliveryFee);
 
@@ -399,12 +421,22 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       alert('الرجاء رفع ملف واحد على الأقل للطباعة');
       return;
     }
-    if (!customerName.trim() || !customerPhone.trim()) {
-      alert('الرجاء كتابة الاسم الكامل ورقم الهاتف لتواصل مندوب الطباعة');
+    if (!customerName.trim() || !customerPhone.trim() || !customerPhone2.trim()) {
+      alert('الرجاء كتابة الاسم الكامل ورقمي الهاتف (الأساسي والثاني) لتواصل مندوب الطباعة والتوصيل');
       return;
     }
-    if (deliveryMethod === 'delivery' && !addressOrCampus.trim()) {
-      alert('الرجاء توضيح عنوان التوصيل أو اسم المجمع الجامعي');
+    if (deliveryMethod === 'delivery') {
+      if (!city) {
+        alert('الرجاء اختيار منطقة التوصيل من قائمة (اختيار العنوان)');
+        return;
+      }
+      if (!addressOrCampus.trim()) {
+        alert('الرجاء توضيح عنوان التوصيل التفصيلي أو اسم المجمع الجامعي');
+        return;
+      }
+    }
+    if (!paymentMethod) {
+      alert('الرجاء اختيار طريقة الدفع أولاً (بنكك، أوكاش، أو فوري)');
       return;
     }
     if (!bankakTransactionId.trim() && !bankakProofUrl) {
@@ -432,6 +464,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       userId: auth.currentUser?.uid,
       customerName,
       customerPhone,
+      customerPhone2: customerPhone2.trim() || undefined,
       customerEmail: customerEmail || auth.currentUser?.email,
       institution: institution.trim() || undefined,
       specialization: specialization.trim() || undefined,
@@ -618,8 +651,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 </div>
 
                 <div>
-                  <span className="text-slate-500 block font-bold mb-0.5">📞 رقم التواصل (واتساب):</span>
-                  <strong className="text-slate-900 text-sm font-mono dir-ltr">{createdOrder.customerPhone}</strong>
+                  <span className="text-slate-500 block font-bold mb-0.5">📞 أرقام التواصل (أساسي / احتياطي):</span>
+                  <strong className="text-slate-900 text-sm font-mono dir-ltr">
+                    {createdOrder.customerPhone} {createdOrder.customerPhone2 ? ` / ${createdOrder.customerPhone2}` : ''}
+                  </strong>
                 </div>
 
                 <div className="sm:col-span-2 md:col-span-3 bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg flex items-center justify-between gap-2 flex-wrap">
@@ -650,11 +685,8 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
 
               {/* Printed Materials / Files Table */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 text-xs space-y-3">
-                <h4 className="font-black text-slate-900 text-sm flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span>📚 أسماء المواد والملفات المرفقة للطباعة ({createdOrder.files.length} مادة/ملف):</span>
-                  <span className="text-amber-800 font-bold bg-amber-50 px-2.5 py-0.5 rounded border border-amber-200">
-                    إجمالي الورق المطبوع: {createdOrder.files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0)} ورقة
-                  </span>
+                <h4 className="font-black text-slate-900 text-sm border-b border-slate-100 pb-2">
+                  📚 أسماء المواد والملفات المرفقة للطباعة ({createdOrder.files.length} مادة/ملف):
                 </h4>
 
                 <div className="space-y-2">
@@ -668,14 +700,13 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                           <strong className="text-slate-900 font-black text-sm">{file.fileName}</strong>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 text-slate-600 font-medium text-[11px] pr-7">
-                          <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-800 font-bold">
-                            {file.pageCount} صفحة
+                        <div className="flex flex-wrap items-center gap-2 text-slate-700 font-bold text-[11px] pr-7">
+                          <span className="bg-slate-100 text-slate-900 px-2.5 py-0.5 rounded border border-slate-300">
+                            عدد النسخ: <strong className="text-slate-950 font-black">{file.copies} عدد</strong>
                           </span>
-                          <span>• نوع الطباعة: {file.color === 'color' ? 'ألوان 🎨' : file.color === 'mixed' ? 'غلاف ألوان والداخل أبيض وأسود' : 'أبيض وأسود 🖤'}</span>
-                          <span>• الوجهين: {file.sides === 'double' ? 'طباعة وجهين 📄' : 'وجه واحد'}</span>
-                          <span>• التغليف: {file.binding === 'spiral_plastic' ? 'سلك حلزوني' : file.binding === 'stapled' ? 'كبس وتدبيس' : file.binding === 'softcover' ? 'غلاف مجلد' : file.binding === 'hardcover_leather' ? 'تجليد فاخر' : 'بدون تغليف'}</span>
-                          <span>• النسخ: <strong className="text-slate-900 font-bold">{file.copies} عدد</strong></span>
+                          <span className="bg-emerald-100 text-emerald-950 px-2.5 py-0.5 rounded border border-emerald-300 font-mono font-black">
+                            السعر: {formatSDG(file.calculatedPrice)}
+                          </span>
                         </div>
 
                         {file.notes && (
@@ -773,13 +804,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
     <div className="max-w-5xl mx-auto py-6 px-4">
       
       {/* Title Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight">
-          ارسل ملفاتك وطبعاتك اونلاين
+      <div className="text-center mb-6">
+        <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          {isLibraryOrder ? 'تفاصيل ومعاينة الشيتات المختارة للطباعة' : 'طباعة مستنداتك الخاصة'}
         </h1>
-        <p className="text-slate-600 text-sm sm:text-base mt-2 max-w-2xl mx-auto">
-          حدد مواصفات الطباعة، نوع الورق، التغليف، واستلم شيتاتك ومستنداتك مطبوعة بأعلى جودة مع التوصيل لجامعتك أو منزلك.
-        </p>
       </div>
 
       <form onSubmit={handleSubmitOrder} className="space-y-8">
@@ -803,15 +831,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 </div>
                 <div>
                   <h3 className="font-black text-sm sm:text-base text-emerald-950">
-                    طلب طباعة شيتات معتمدة من مكتبة الكلية ودليل الليدر
+                    الشيتات والمذكرات الدراسية المختارة من المكتبة
                   </h3>
                   <p className="text-xs text-emerald-800 mt-0.5">
-                    تم تحميل ملفات ومستندات المذكرات والشيتات المحددة تلقائياً من المكتبة دون الحاجة لرفع أية ملفات.
+                    تم تحميل الشيتات والمذكرات المحددة تلقائياً من المكتبة وتجهيز خيارات طباعتها.
                   </p>
                 </div>
               </div>
               <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs px-3 py-1.5 rounded-xl font-bold shrink-0">
-                ملفات معتمدة ومجهزة ✓
+                مجهزة للطباعة ✓
               </span>
             </div>
           ) : files.length === 0 && (
@@ -841,186 +869,75 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
             </div>
           )}
 
-          {/* List of uploaded files & options */}
+          {/* List of uploaded files in ONE ultra-compact mobile-ready rectangle */}
           {files.length > 0 && (
-            <div className="mt-6 space-y-6">
-              
-              {/* Header & View Mode Switcher */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-100 p-3 rounded-2xl border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-slate-900 text-sm sm:text-base">
-                    المواد والشيتات المحددة ({files.length}):
-                  </span>
-                  <span className="text-xs text-amber-900 bg-amber-200 px-2.5 py-0.5 rounded-full font-bold">
-                    {totalPagesSum} صفحة إجمالية
+            <div className="mt-3 bg-slate-50/90 rounded-xl border border-slate-200 p-2 sm:p-3 space-y-2">
+              {/* Rectangle Header */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span className="font-black text-slate-900 text-xs">
+                    تفاصيل الشيتات ({files.length}):
                   </span>
                 </div>
-
-                {/* Switcher Buttons */}
-                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-300 w-full sm:w-auto justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode('compact')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      previewMode === 'compact'
-                        ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>المعاينة الشاملة والمختصرة 🎨</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode('detailed')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      previewMode === 'detailed'
-                        ? 'bg-slate-800 text-white font-black shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>العرض التفصيلي لكل شيت ⚙️</span>
-                  </button>
-                </div>
+                <span className="text-[10px] font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {formatSDG(subtotalSum)}
+                </span>
               </div>
 
-              {/* View Mode 1: Compact All Materials Visual Matrix */}
-              {previewMode === 'compact' ? (
-                <AllMaterialsPrintPreview
-                  files={files}
-                  onUpdateFileOption={updateFileOption}
-                  onRemoveFile={removeFile}
-                  isLibraryOrder={isLibraryOrder}
-                  academicPath={extractedAcademicPath}
-                />
-              ) : (
-                /* View Mode 2: Detailed Per-File Cards */
-                <div className="space-y-6">
-                  {files.map((file, idx) => (
-                    <div 
-                      key={file.id} 
-                      className="bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200 relative space-y-4"
-                    >
+              {/* Ultra Compact List of Files */}
+              <div className="divide-y divide-slate-100 bg-white rounded-lg border border-slate-200 overflow-hidden">
+                {files.map((file) => (
+                  <div 
+                    key={file.id} 
+                    className="p-1.5 sm:p-2 flex items-center justify-between gap-1.5 text-xs hover:bg-slate-50 transition-colors"
+                  >
+                    {/* File Name & Copies */}
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <div className="w-6 h-6 bg-emerald-100 text-emerald-800 rounded flex items-center justify-center shrink-0 font-bold">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-900 truncate text-[11px] sm:text-xs" title={file.fileName}>
+                          {file.fileName}
+                        </h4>
+                        <span className="text-[9px] text-slate-500 font-bold block sm:inline">
+                          ({file.copies} {file.copies === 1 ? 'نسخة' : 'نسخ'})
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Price & Delete */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Price badge */}
+                      <div className="bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-center min-w-[55px]">
+                        <span className="text-emerald-950 font-black text-[10px] sm:text-[11px] block">
+                          {formatSDG(file.calculatedPrice)}
+                        </span>
+                      </div>
+
+                      {/* Remove button */}
                       <button
                         type="button"
                         onClick={() => removeFile(file.id)}
-                        className="absolute top-4 left-4 text-slate-400 hover:text-rose-600 transition-colors p-1"
-                        title="حذف الملف"
+                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                        title="حذف هذا الشيت"
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
-
-                      {/* File name & size */}
-                      <div className="flex items-center gap-3 pl-8">
-                        <div className="p-3 bg-amber-500 text-slate-950 rounded-lg">
-                          <FileText className="w-6 h-6" />
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-slate-900 text-sm sm:text-base line-clamp-1">
-                            {file.fileName}
-                          </h4>
-                          <p className="text-xs text-slate-500">
-                            حجم الملف: {(file.fileSize / (1024 * 1024)).toFixed(2)} MB
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Options Grid for this file */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs sm:text-sm pt-2">
-                        
-                        {/* Page Count */}
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            عدد صفحات المستند الأصلي:
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="2000"
-                            value={file.pageCount}
-                            onChange={e => updateFileOption(file.id, { pageCount: parseInt(e.target.value) || 1 })}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                          />
-                          <div className="mt-1.5 p-2 bg-emerald-50/90 border border-emerald-300 rounded-lg text-xs space-y-0.5">
-                            <div className="flex items-center justify-between text-emerald-950 font-bold">
-                              <span>الورق المطبوع (÷{file.pagesPerSheet || 1}):</span>
-                              <span className="text-amber-800 text-sm font-extrabold bg-white px-2 py-0.5 rounded border border-amber-300">
-                                {Math.ceil(file.pageCount / (file.pagesPerSheet || 1))} ورقة
-                              </span>
-                            </div>
-                            {file.sides === 'double' && (
-                              <p className="text-[10px] text-emerald-800 font-medium">
-                                ورق وجهين: {Math.ceil(Math.ceil(file.pageCount / (file.pagesPerSheet || 1)) / 2)} ورقة مزدوجة
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Pages Per Sheet (Layout / Slides & Visual Diagram) */}
-                        <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 mt-2">
-                          <SheetLayoutPreview
-                            pagesPerSheet={file.pagesPerSheet || 1}
-                            sides={file.sides}
-                            color={file.color}
-                            pageCount={file.pageCount}
-                            onSelectPagesPerSheet={(pps) => updateFileOption(file.id, { pagesPerSheet: pps })}
-                            onSelectSides={(s) => updateFileOption(file.id, { sides: s })}
-                            interactive={true}
-                          />
-                        </div>
-
-                        {/* Paper Size - Fixed to A4 */}
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            حجم الورق:
-                          </label>
-                          <div className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 font-bold text-sm flex items-center justify-between">
-                            <span>A4 (حجم قياسي)</span>
-                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-medium border border-amber-300">ثابت</span>
-                          </div>
-                        </div>
-
-                        {/* Number of Copies */}
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            عدد النسخ المطلوبة:
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="100"
-                            value={file.copies}
-                            onChange={e => updateFileOption(file.id, { copies: parseInt(e.target.value) || 1 })}
-                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* File Subtotal */}
-                        <div className="flex flex-col justify-end">
-                          <div className="bg-amber-100/80 p-2.5 rounded-lg border border-amber-200 text-center">
-                            <span className="text-[11px] text-amber-900 block font-medium">تكلفة هذا الملف:</span>
-                            <strong className="text-amber-950 font-bold text-base">
-                              {formatSDG(file.calculatedPrice)}
-                            </strong>
-                          </div>
-                        </div>
-
-                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                ))}
+              </div>
 
               {!isLibraryOrder && (
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl border border-slate-300 flex items-center justify-center gap-2 transition-colors text-sm"
+                  className="w-full py-1.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-dashed border-slate-300 flex items-center justify-center gap-1 transition-colors text-[11px] cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
-                  إضافة ملف آخر لهذا الطلب
+                  <Plus className="w-3 h-3" />
+                  <span>إضافة ملف آخر لهذا الطلب</span>
                 </button>
               )}
             </div>
@@ -1038,7 +955,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
                 الاسم الكامل *
@@ -1058,7 +975,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
-                رقم الهاتف (واتساب / اتصال) *
+                رقم الهاتف الأول (أساسي) *
               </label>
               <div className="relative">
                 <Phone className="w-5 h-5 text-slate-400 absolute right-3 top-3" />
@@ -1072,6 +989,23 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 />
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-1">
+                رقم الهاتف الثاني (إجباري) *
+              </label>
+              <div className="relative">
+                <Phone className="w-5 h-5 text-slate-400 absolute right-3 top-3" />
+                <input
+                  type="tel"
+                  required
+                  value={customerPhone2}
+                  onChange={e => setCustomerPhone2(e.target.value)}
+                  placeholder="مثال: 0912345678"
+                  className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm dir-ltr text-right"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -1081,24 +1015,70 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               </label>
               <input
                 type="text"
+                list="sudan-universities-datalist"
                 value={institution}
                 onChange={e => setInstitution(e.target.value)}
-                placeholder="مثال: جامعة النيلين، جامعة الخرطوم..."
+                placeholder="اختر أو اكتب اسم جامعتك..."
                 className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm"
               />
+              <datalist id="sudan-universities-datalist">
+                {SUDAN_UNIVERSITIES.map(u => (
+                  <option key={u.id} value={u.name} />
+                ))}
+                <option value="جامعة الخرطوم" />
+                <option value="جامعة الجزيرة" />
+                <option value="جامعة أزهري" />
+              </datalist>
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-slate-800 mb-1">
-                التخصص / الكلية / الدفعة (اختياري)
+                التخصص / الكلية (اختياري)
               </label>
               <input
                 type="text"
                 value={specialization}
                 onChange={e => setSpecialization(e.target.value)}
-                placeholder="مثال: طب وجراحة - الدفعة 29، أو كلية التجارة..."
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm"
+                placeholder="مثال: كلية التجارة، بكالوريوس محاسبة، دبلوم حاسوب..."
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm mb-2"
               />
+              {/* Degree track quick selector pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-slate-500">اختر نوع المؤهل:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('بكالوريوس')) {
+                      setSpecialization(prev => prev ? `بكالوريوس ${prev}` : 'بكالوريوس ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  🎓 بكالوريوس
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('دبلوم')) {
+                      setSpecialization(prev => prev ? `دبلوم ${prev}` : 'دبلوم تقني ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100 transition-colors cursor-pointer"
+                >
+                  📜 دبلوم تقني
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!specialization.includes('دراسات عليا')) {
+                      setSpecialization(prev => prev ? `ماجستير/دراسات عليا ${prev}` : 'ماجستير/دراسات عليا ');
+                    }
+                  }}
+                  className="px-2 py-0.5 rounded-lg border text-[11px] font-bold bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100 transition-colors cursor-pointer"
+                >
+                  🎓 ماجستير
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1167,36 +1147,82 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   <select
                     value={city}
                     onChange={e => setCity(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    className={`w-full bg-white border rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none transition-all ${
+                      !city ? 'border-amber-400 text-slate-500 bg-amber-50/20 font-semibold' : 'border-slate-300 text-slate-900'
+                    }`}
                   >
-                    <optgroup label="👑 أمدرمان">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'omdurman').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="💧 بحري وشرق النيل">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'bahri_eastnile').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="🏙️ الخرطوم">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'khartoum').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="📦 باقي الولايات (إرساليات طرود)">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'states').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
+                    <option value="" disabled>
+                      اختيار العنوان
+                    </option>
+                    
+                    {/* أمدرمان وكرري وأمبدة */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'omdurman' || (z.locality && (z.locality.includes('كرري') || z.locality.includes('أمدرمان') || z.locality.includes('أمبدة')))) && (
+                      <optgroup label="👑 ولاية الخرطوم (محلية كرري، أمدرمان، أمبدة)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'omdurman' || (z.locality && (z.locality.includes('كرري') || z.locality.includes('أمدرمان') || z.locality.includes('أمبدة')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* بحري وشرق النيل */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'bahri_eastnile' || (z.locality && (z.locality.includes('بحري') || z.locality.includes('شرق النيل')))) && (
+                      <optgroup label="💧 ولاية الخرطوم (محلية بحري، شرق النيل)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'bahri_eastnile' || (z.locality && (z.locality.includes('بحري') || z.locality.includes('شرق النيل')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* الخرطوم وجبل أولياء */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'khartoum' || (z.locality && (z.locality.includes('الخرطوم') || z.locality.includes('جبل أولياء')))) && (
+                      <optgroup label="🏙️ ولاية الخرطوم (محلية الخرطوم، جبل أولياء)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'khartoum' || (z.locality && (z.locality.includes('الخرطوم') || z.locality.includes('جبل أولياء')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* باقي ولايات السودان */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'states' || (z.state && z.state !== 'ولاية الخرطوم')) && (
+                      <optgroup label="📦 إرساليات باقي الولايات (شحن طرود سريع)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'states' || (z.state && z.state !== 'ولاية الخرطوم')).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.state ? `${z.state} • ` : ''}{z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* أية مناطق أخرى مخصصة */}
+                    {activeDeliveryZones.some(z => 
+                      z.regionKey !== 'omdurman' && 
+                      z.regionKey !== 'bahri_eastnile' && 
+                      z.regionKey !== 'khartoum' && 
+                      z.regionKey !== 'states' && 
+                      z.state === 'ولاية الخرطوم' &&
+                      (!z.locality || (!z.locality.includes('كرري') && !z.locality.includes('أمدرمان') && !z.locality.includes('أمبدة') && !z.locality.includes('بحري') && !z.locality.includes('شرق النيل') && !z.locality.includes('الخرطوم') && !z.locality.includes('جبل أولياء')))
+                    ) && (
+                      <optgroup label="📍 مناطق أخرى">
+                        {activeDeliveryZones.filter(z => 
+                          z.regionKey !== 'omdurman' && 
+                          z.regionKey !== 'bahri_eastnile' && 
+                          z.regionKey !== 'khartoum' && 
+                          z.regionKey !== 'states' && 
+                          z.state === 'ولاية الخرطوم' &&
+                          (!z.locality || (!z.locality.includes('كرري') && !z.locality.includes('أمدرمان') && !z.locality.includes('أمبدة') && !z.locality.includes('بحري') && !z.locality.includes('شرق النيل') && !z.locality.includes('الخرطوم') && !z.locality.includes('جبل أولياء')))
+                        ).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -1255,13 +1281,13 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               {/* Bankak Option */}
               <div 
                 onClick={() => setPaymentMethod('bankak')}
-                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                   paymentMethod === 'bankak'
                     ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img 
                       src={bankakLogo} 
@@ -1277,39 +1303,40 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">موصى به</span>
                 </div>
 
-                <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span>رقم حساب بنكك:</span>
-                    <div className="flex items-center gap-2">
-                      <strong className="text-emerald-950 font-black text-base font-mono">1926413</strong>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyAccount('1926413', e)}
-                        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
-                        title="نسخ رقم حساب بنكك"
-                      >
-                        {copiedAccNum === '1926413' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span className="text-[11px]">نسخ</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>اسم صاحب الحساب:</span>
-                    <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
-                  </div>
-                </div>
-
                 {paymentMethod === 'bankak' && (
                   <div className="mt-3 pt-3 border-t border-emerald-200 space-y-3">
+                    {/* Account Info */}
+                    <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-600">رقم حساب بنكك:</span>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-emerald-950 font-black text-base font-mono">1926413</strong>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyAccount('1926413', e)}
+                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                            title="نسخ رقم حساب بنكك"
+                          >
+                            {copiedAccNum === '1926413' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-200" />
+                                <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="text-[11px]">نسخ</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                        <span className="font-bold text-slate-600">اسم صاحب الحساب:</span>
+                        <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                      </div>
+                    </div>
+
                     <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
                       <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                       <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
@@ -1390,13 +1417,13 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               {/* Okash Option */}
               <div 
                 onClick={() => setPaymentMethod('okash')}
-                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                   paymentMethod === 'okash'
                     ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img 
                       src={okashLogo} 
@@ -1411,39 +1438,40 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   </div>
                 </div>
 
-                <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span>رقم حساب أوكاش:</span>
-                    <div className="flex items-center gap-2">
-                      <strong className="text-emerald-950 font-black text-base font-mono">798340</strong>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyAccount('798340', e)}
-                        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
-                        title="نسخ رقم حساب أوكاش"
-                      >
-                        {copiedAccNum === '798340' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span className="text-[11px]">نسخ</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>اسم صاحب الحساب:</span>
-                    <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
-                  </div>
-                </div>
-
                 {paymentMethod === 'okash' && (
                   <div className="mt-3 pt-3 border-t border-emerald-200 space-y-3">
+                    {/* Account Info */}
+                    <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-600">رقم حساب أوكاش:</span>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-emerald-950 font-black text-base font-mono">798340</strong>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyAccount('798340', e)}
+                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                            title="نسخ رقم حساب أوكاش"
+                          >
+                            {copiedAccNum === '798340' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-200" />
+                                <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="text-[11px]">نسخ</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                        <span className="font-bold text-slate-600">اسم صاحب الحساب:</span>
+                        <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                      </div>
+                    </div>
+
                     <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
                       <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                       <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
@@ -1524,13 +1552,13 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
               {/* Fawry Option */}
               <div 
                 onClick={() => setPaymentMethod('fawry')}
-                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                   paymentMethod === 'fawry'
                     ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <img 
                       src={fawryLogo} 
@@ -1545,39 +1573,40 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   </div>
                 </div>
 
-                <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span>رقم حساب فوري:</span>
-                    <div className="flex items-center gap-2">
-                      <strong className="text-emerald-950 font-black text-base font-mono">51404329</strong>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyAccount('51404329', e)}
-                        className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
-                        title="نسخ رقم حساب فوري"
-                      >
-                        {copiedAccNum === '51404329' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-200" />
-                            <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span className="text-[11px]">نسخ</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>اسم صاحب الحساب:</span>
-                    <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
-                  </div>
-                </div>
-
                 {paymentMethod === 'fawry' && (
                   <div className="mt-3 pt-3 border-t border-emerald-200 space-y-3">
+                    {/* Account Info */}
+                    <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-emerald-200 space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-600">رقم حساب فوري:</span>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-emerald-950 font-black text-base font-mono">51404329</strong>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyAccount('51404329', e)}
+                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                            title="نسخ رقم حساب فوري"
+                          >
+                            {copiedAccNum === '51404329' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-200" />
+                                <span className="text-[11px] font-extrabold text-emerald-100">تم النسخ!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="text-[11px]">نسخ</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                        <span className="font-bold text-slate-600">اسم صاحب الحساب:</span>
+                        <strong className="text-slate-900 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                      </div>
+                    </div>
+
                     <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
                       <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                       <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
@@ -1691,8 +1720,12 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                       <strong className="text-white font-bold">{customerName || 'لم يدخل بعد'}</strong>
                     </div>
                     <div className="text-emerald-100 flex justify-between">
-                      <span>الهاتف:</span>
+                      <span>الهاتف 1 (أساسي):</span>
                       <strong className="text-white font-mono">{customerPhone || 'لم يدخل بعد'}</strong>
+                    </div>
+                    <div className="text-emerald-100 flex justify-between">
+                      <span>الهاتف 2 (إجباري):</span>
+                      <strong className="text-white font-mono">{customerPhone2 || 'لم يدخل بعد'}</strong>
                     </div>
                     {(institution || specialization) && (
                       <div className="text-emerald-200 text-[11px] pt-1 border-t border-emerald-800/60">
@@ -1704,63 +1737,39 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   {/* Materials list summary */}
                   {files.length > 0 && (
                     <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-700/80 text-xs space-y-2">
-                      <div className="text-emerald-300 font-bold border-b border-emerald-800 pb-1 flex justify-between items-center">
-                        <span>📚 تفاصيل نمط طباعة المواد ({files.length}):</span>
-                        <span className="text-[10px] text-emerald-200 font-mono">{totalPagesSum} صفحة ➔ {totalPrintedSheetsSum} ورقة</span>
+                      <div className="text-emerald-300 font-bold border-b border-emerald-800 pb-1.5 flex justify-between items-center">
+                        <span>📚 تفاصيل الشيتات ({files.length}):</span>
                       </div>
-                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                        {files.map((f, i) => {
-                          const pps = f.pagesPerSheet || 1;
-                          const sheetsPerCopy = Math.ceil(f.pageCount / pps);
-                          const physicalPapers = Math.ceil(sheetsPerCopy / (f.sides === 'double' ? 2 : 1));
-
-                          return (
-                            <div key={i} className="text-emerald-100 text-[11px] bg-emerald-900/90 p-2 rounded-lg border border-emerald-700/70 space-y-1">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-white truncate max-w-[190px]">
-                                  {i + 1}. {f.fileName}
-                                </span>
-                                <span className="text-amber-300 font-mono text-[11px] font-bold shrink-0">
-                                  {formatSDG(f.calculatedPrice)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-medium text-emerald-200">
-                                <span className="bg-emerald-800 px-1.5 py-0.5 rounded text-white font-bold">
-                                  {pps === 2 ? '2:1 عادي' : pps === 4 ? '4:1 شائع ⭐' : pps === 8 ? '8:1 اسلايت' : `${pps} في 1`}
-                                </span>
-                                <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">
-                                  وجهين 🔄
-                                </span>
-                                <span className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded font-black font-mono">
-                                  {physicalPapers * f.copies} ورقة مطبوعة
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                        {files.map((f, i) => (
+                          <div key={i} className="text-emerald-100 text-xs bg-emerald-900/90 p-2.5 rounded-lg border border-emerald-700/70 flex justify-between items-center gap-2">
+                            <span className="font-bold text-white truncate flex-1">
+                              {i + 1}. {f.fileName}
+                            </span>
+                            <span className="text-amber-300 font-mono text-xs font-black shrink-0">
+                              {formatSDG(f.calculatedPrice)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
 
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>عدد الملفات:</span>
-                    <strong className="text-white">{files.length} ملف</strong>
+                    <span>عدد الشيتات:</span>
+                    <strong className="text-white">{files.length} شيت</strong>
                   </div>
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>إجمالي صفحات المستندات الأصلية:</span>
-                    <strong className="text-white">{totalPagesSum} صفحة</strong>
-                  </div>
-                  <div className="flex justify-between text-amber-300 font-bold bg-emerald-950/70 p-2.5 rounded-xl border border-emerald-700/80 my-1">
-                    <span>عدد الورق المطبوع فعلياً (بعد التقسيم):</span>
-                    <strong className="text-amber-300 text-sm">{totalPrintedSheetsSum} ورقة 🖨️</strong>
-                  </div>
-                  <div className="flex justify-between text-emerald-100/90">
-                    <span>قيمة طباعة المستندات:</span>
+                    <span>قيمة الشيتات:</span>
                     <strong className="text-white">{formatSDG(subtotalSum)}</strong>
                   </div>
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>رسوم التوصيل ({city}):</span>
-                    <strong className="text-white">{formatSDG(deliveryFee)}</strong>
+                    <span>رسوم التوصيل {city ? `(${city.length > 30 ? city.slice(0, 30) + '...' : city})` : ''}:</span>
+                    <strong className="text-white">
+                      {deliveryMethod === 'pickup' 
+                        ? 'مجاناً (استلام شخصي)' 
+                        : city ? formatSDG(deliveryFee) : 'اختر العنوان للتحديد'}
+                    </strong>
                   </div>
 
                   {/* Coupon Box */}
@@ -1855,6 +1864,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
           <div className="w-full max-w-3xl my-8">
             <DeliveryRatesGuide
               isOpen={true}
+              zones={deliveryZones}
               onClose={() => setShowDeliveryGuideModal(false)}
               onSelectZone={(selectedZoneText) => {
                 setCity(selectedZoneText);
