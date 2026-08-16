@@ -227,11 +227,33 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const [selectedLevelNum, setSelectedLevelNum] = useState<number | null>(1);
   const [selectedSemesterNum, setSelectedSemesterNum] = useState<number | null>(1);
 
-  // Multi-selection & Copies state
+  // Multi-selection & Copies state - default to all available sheets selected
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>(() => 
-    SAMPLE_STUDY_SHEETS.filter(s => s.isAvailable !== false).map(s => s.id)
+    sheets.filter(s => s.isAvailable !== false).map(s => s.id)
   );
   const [sheetCopies, setSheetCopies] = useState<Record<string, number>>({});
+
+  // Auto-select all available materials by default whenever entering or switching a semester or department view
+  useEffect(() => {
+    if (availableFilteredSheets.length > 0) {
+      const availableIds = availableFilteredSheets.map(s => s.id);
+      setSelectedSheetIds(prev => {
+        const set = new Set([...prev, ...availableIds]);
+        return Array.from(set);
+      });
+    }
+  }, [
+    activeMode,
+    leaderStep,
+    selectedSemesterNum,
+    selectedLevelNum,
+    selectedLeaderDept,
+    selectedCollege,
+    selectedDegreeTrack,
+    selectedSemester,
+    selectedDept,
+    sheets
+  ]);
 
   const getCopies = (sheetId: string) => sheetCopies[sheetId] || 1;
 
@@ -346,6 +368,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const handlePrintSheet = (sheet: StudySheet) => {
     const hierarchy = buildSheetHierarchyPath(sheet);
     const copies = getCopies(sheet.id);
+    const unitPrice = sheet.priceEstimate || 0;
     onSelectSheetForPrint({
       fileName: `${sheet.title}.pdf`,
       pageCount: sheet.pageCount || 40,
@@ -353,6 +376,9 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
       binding: sheet.recommendedBinding,
       sides: 'double',
       copies: copies,
+      calculatedPrice: unitPrice * copies,
+      unitPrice: unitPrice,
+      isFixedPrice: true,
       notes: `شيت من مكتبة الكلية الشاملة | المسار الأكاديمي: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
     });
   };
@@ -366,6 +392,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     const optionsList: Partial<PrintFileOptions>[] = selectedSheetsInView.map(sheet => {
       const hierarchy = buildSheetHierarchyPath(sheet);
       const copies = getCopies(sheet.id);
+      const unitPrice = sheet.priceEstimate || 0;
       return {
         fileName: `${sheet.title}.pdf`,
         pageCount: sheet.pageCount || 40,
@@ -373,6 +400,9 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
         binding: sheet.recommendedBinding,
         sides: 'double',
         copies: copies,
+        calculatedPrice: unitPrice * copies,
+        unitPrice: unitPrice,
+        isFixedPrice: true,
         notes: `شيت من المكتبة الجامعية | المسار: (${hierarchy}) | دكتور المادة: ${sheet.authorOrLecturer || 'معتمد'}`,
       };
     });

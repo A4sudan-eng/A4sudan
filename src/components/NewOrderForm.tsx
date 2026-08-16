@@ -174,7 +174,16 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
         const binding = p.binding || 'spiral_plastic';
         const copies = p.copies || 1;
         const pagesPerSheet = p.pagesPerSheet || 2;
-        const price = calculateFilePrice(pages, color, paperSize, sides, paperWeight, binding, copies, rates, pagesPerSheet);
+        
+        // Preserve fixed price from study sheets library
+        const isFixedPrice = p.isFixedPrice ?? (typeof p.calculatedPrice === 'number' && p.calculatedPrice > 0);
+        const unitPrice = typeof p.unitPrice === 'number' && p.unitPrice > 0
+          ? p.unitPrice
+          : (typeof p.calculatedPrice === 'number' && p.calculatedPrice > 0 ? Math.round(p.calculatedPrice / copies) : undefined);
+
+        const price = isFixedPrice && unitPrice && unitPrice > 0
+          ? Math.round(unitPrice * copies)
+          : calculateFilePrice(pages, color, paperSize, sides, paperWeight, binding, copies, rates, pagesPerSheet);
 
         return {
           id: `file-preload-${idx}-${Date.now()}`,
@@ -191,6 +200,8 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
           pagesPerSheet,
           notes: p.notes || '',
           calculatedPrice: price,
+          unitPrice: unitPrice,
+          isFixedPrice: isFixedPrice,
           previewUrl: p.previewUrl,
         };
       });
@@ -202,20 +213,28 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   React.useEffect(() => {
     setFiles(prev => {
       if (!prev || prev.length === 0) return prev;
-      return prev.map(f => ({
-        ...f,
-        calculatedPrice: calculateFilePrice(
-          f.pageCount,
-          f.color,
-          f.paperSize,
-          f.sides,
-          f.paperWeight,
-          f.binding,
-          f.copies,
-          rates,
-          f.pagesPerSheet || 1
-        )
-      }));
+      return prev.map(f => {
+        if (f.isFixedPrice && typeof f.unitPrice === 'number' && f.unitPrice > 0) {
+          return {
+            ...f,
+            calculatedPrice: Math.round(f.unitPrice * (f.copies || 1)),
+          };
+        }
+        return {
+          ...f,
+          calculatedPrice: calculateFilePrice(
+            f.pageCount,
+            f.color,
+            f.paperSize,
+            f.sides,
+            f.paperWeight,
+            f.binding,
+            f.copies,
+            rates,
+            f.pagesPerSheet || 1
+          )
+        };
+      });
     });
   }, [rates]);
 
@@ -328,18 +347,22 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
     setFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const updated = { ...f, ...updates };
-      // Recalculate price
-      updated.calculatedPrice = calculateFilePrice(
-        updated.pageCount,
-        updated.color,
-        updated.paperSize,
-        updated.sides,
-        updated.paperWeight,
-        updated.binding,
-        updated.copies,
-        rates,
-        updated.pagesPerSheet || 1
-      );
+      // Recalculate price: if fixed price (from study library), maintain fixed unit price multiplied by copies
+      if (updated.isFixedPrice && typeof updated.unitPrice === 'number' && updated.unitPrice > 0) {
+        updated.calculatedPrice = Math.round(updated.unitPrice * (updated.copies || 1));
+      } else {
+        updated.calculatedPrice = calculateFilePrice(
+          updated.pageCount,
+          updated.color,
+          updated.paperSize,
+          updated.sides,
+          updated.paperWeight,
+          updated.binding,
+          updated.copies,
+          rates,
+          updated.pagesPerSheet || 1
+        );
+      }
       return updated;
     }));
   };

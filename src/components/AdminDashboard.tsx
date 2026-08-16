@@ -5,7 +5,7 @@ import {
   Lock, KeyRound, Search, Trash2, LogOut, AlertCircle, FileCheck, Camera, Image as ImageIcon, X, Download, FileSpreadsheet, ExternalLink,
   BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle, FolderTree,
   ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle, RotateCcw,
-  Truck
+  Truck, Sparkles, Power
 } from 'lucide-react';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -2645,6 +2645,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
           </button>
           <button
+            onClick={() => setActiveTab('pricing')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'pricing' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+            }`}
+          >
+            <DollarSign className="w-4 h-4 text-amber-400" />
+            <span>تعريفات الأسعار والعروض 💰</span>
+          </button>
+          <button
             onClick={() => setActiveTab('delivery')}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'delivery' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
@@ -4527,6 +4536,80 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           <form onSubmit={handleSaveRates} className="space-y-6 text-xs sm:text-sm">
+            {/* Promotional Campaign Price (Home Page & WhatsApp Ads) */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-amber-400/5 to-emerald-500/10 p-5 rounded-2xl border-2 border-amber-400 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-amber-300/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shadow">
+                    🔥
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-slate-950 text-base">
+                      سعر الورقة في العرض الترويجي والصفحة الرئيسية (A4 SUDAN Promo Price)
+                    </h3>
+                    <p className="text-xs text-slate-600 font-medium">
+                      هذا السعر يظهر مباشرة في الإعلانات المتحركة والزر العائم في الصفحة الرئيسية ويتم ربطه تلقائياً برسائل الواتساب.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="bg-slate-950 text-amber-300 font-mono font-black text-xs px-3 py-1.5 rounded-xl shrink-0 shadow-sm">
+                  السعر النشط: {editingRates.promoPaperPrice ?? 99} ج.س
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-2">
+                  <label className="block font-black text-slate-900 text-sm">
+                    سعر الورقة الترويجي (SDG) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={editingRates.promoPaperPrice ?? 99}
+                      onChange={e => {
+                        const val = Number(e.target.value) || 0;
+                        setEditingRates({ ...editingRates, promoPaperPrice: val });
+                      }}
+                      className="w-full bg-slate-50 border-2 border-amber-300 rounded-xl p-3 font-mono font-black text-slate-950 text-lg focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                    <span className="absolute left-3 top-3.5 text-xs text-amber-900 font-black pointer-events-none">
+                      ج.س / ورقة
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    يمكنك تعديل هذا الرقم (مثلاً 99 أو 120 أو 85) وسيتحدث في الحال على الصفحة الرئيسية وزر الواتساب.
+                  </p>
+                </div>
+
+                {/* Live Preview of the dynamic ad text */}
+                <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 space-y-2 shadow-inner">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-amber-400">
+                    <span>معاينة الإعلان في الصفحة الرئيسية:</span>
+                    <span className="bg-amber-400/20 px-2 py-0.5 rounded text-amber-300">مباشر 🔴</span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 text-xs font-black text-amber-300 flex items-center gap-2">
+                      <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.5 rounded">إعلان 1</span>
+                      <span>اطبع الورقة بـ {editingRates.promoPaperPrice ?? 99}ج في A4 SUDAN</span>
+                    </div>
+
+                    <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 text-xs font-black text-emerald-300 flex items-center gap-2">
+                      <span className="bg-emerald-400 text-slate-950 text-[10px] px-1.5 py-0.5 rounded">إعلان 2</span>
+                      <span>عرض خاص: الورقة بـ {editingRates.promoPaperPrice ?? 99} ج</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 pt-1 flex items-center justify-between">
+                    <span>رقم واتساب المربوط: <strong>0119636365</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Sheet Rates Section */}
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
               <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -6102,7 +6185,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-2xl">{isBachelor ? '🎓' : '📜'}</span>
                               <h4 className="text-xl font-black text-amber-300">{track.name}</h4>
-                              <span className="text-xs font-mono text-slate-300">({track.englishName})</span>
+                              <span className="text-xs font-mono text-slate-300">({track.id === 'bachelor' ? 'Bachelor' : 'Diploma'})</span>
                             </div>
                             <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
                               {track.description}

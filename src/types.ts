@@ -24,6 +24,8 @@ export interface PrintFileOptions {
   pagesPerSheet?: number; // 1, 2, 4, 8 (عدد الصفحات في الورقة الواحدة)
   notes?: string;
   calculatedPrice: number;
+  unitPrice?: number; // Fixed unit price for library study sheets
+  isFixedPrice?: boolean; // When true, preserve exact sheet price without dynamic recalculation
   previewUrl?: string;
 }
 
@@ -109,6 +111,7 @@ export interface PricingRates {
   paperWeightPrice: Record<PaperWeight, number>; // 70g: 0, 80g: 20, etc.
   bindingPrice: Record<BindingType, number>; // none: 0, spiral: 800 SDG, etc.
   deliveryFees: Record<string, number>; // city -> delivery price in SDG
+  promoPaperPrice?: number; // Promotional price per paper sheet in home page & ads (e.g. 99 SDG)
 }
 
 export interface AIAnalysisRequest {

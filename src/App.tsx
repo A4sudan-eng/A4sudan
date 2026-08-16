@@ -32,7 +32,8 @@ import {
   saveUniversitiesToCloud,
   getAcademicLevelsFromCloud,
   subscribeToCloudAcademicLevels,
-  saveAcademicLevelsToCloud
+  saveAcademicLevelsToCloud,
+  subscribeToCloudDegreeTracks
 } from './lib/firebase';
 import { getStoredUniversities, saveStoredUniversities, getStoredAcademicLevels, saveStoredAcademicLevels } from './data/neelainData';
 import { recordVisit } from './utils/analyticsTracker';
@@ -344,10 +345,20 @@ export default function App() {
       if (localRates) {
         const parsed = JSON.parse(localRates);
         if (parsed && parsed.bwPerPage && parsed.bwPerPage >= 200) {
-          setRates(parsed);
+          setRates({
+            ...DEFAULT_PRICING_RATES,
+            ...parsed,
+            promoPaperPrice: parsed.promoPaperPrice ?? 99
+          });
         } else {
           // Upgrade old rates (< 200) to new rate standards
-          const upgraded = { ...DEFAULT_PRICING_RATES, ...parsed, bwPerPage: Math.max(200, parsed?.bwPerPage || 200), colorPerPage: Math.max(500, parsed?.colorPerPage || 500) };
+          const upgraded = { 
+            ...DEFAULT_PRICING_RATES, 
+            ...parsed, 
+            bwPerPage: Math.max(200, parsed?.bwPerPage || 200), 
+            colorPerPage: Math.max(500, parsed?.colorPerPage || 500),
+            promoPaperPrice: parsed?.promoPaperPrice ?? 99
+          };
           setRates(upgraded);
           localStorage.setItem('a4_pricing_rates', JSON.stringify(upgraded));
         }
@@ -362,7 +373,9 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data && data.bwPerPage) {
-          const validRates = data.bwPerPage < 200 ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500 } : data;
+          const validRates = data.bwPerPage < 200 
+            ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500, promoPaperPrice: data.promoPaperPrice ?? 99 } 
+            : { ...DEFAULT_PRICING_RATES, ...data, promoPaperPrice: data.promoPaperPrice ?? 99 };
           setRates(validRates);
           try {
             localStorage.setItem('a4_pricing_rates', JSON.stringify(validRates));
@@ -941,6 +954,7 @@ export default function App() {
         <main className="pb-12">
           {currentView === 'home' && (
             <HomeView
+              rates={rates}
               onNavigateToSheets={() => setCurrentView('sheets')}
               onNavigateToTrack={() => setCurrentView('track')}
             />

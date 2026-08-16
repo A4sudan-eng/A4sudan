@@ -141,6 +141,7 @@ export const DELIVERY_ZONES: DeliveryZone[] = [
 ];
 
 export const DEFAULT_PRICING_RATES: PricingRates = {
+  promoPaperPrice: 99, // 99 SDG Promotional paper price per sheet for A4su campaigns
   bwPerPage: 200, // 200 SDG per Physical Paper Sheet (سعر الورقة المطبوعة أبيض وأسود)
   colorPerPage: 500, // 500 SDG per Physical Paper Sheet (سعر الورقة المطبوعة ألوان)
   paperSizeMultiplier: {
