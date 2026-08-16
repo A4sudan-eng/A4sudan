@@ -347,23 +347,14 @@ export default function App() {
       const localRates = localStorage.getItem('a4_pricing_rates');
       if (localRates) {
         const parsed = JSON.parse(localRates);
-        if (parsed && parsed.bwPerPage && parsed.bwPerPage >= 200) {
+        if (parsed && typeof parsed.bwPerPage === 'number') {
           setRates({
             ...DEFAULT_PRICING_RATES,
             ...parsed,
             promoPaperPrice: parsed.promoPaperPrice ?? 99
           });
         } else {
-          // Upgrade old rates (< 200) to new rate standards
-          const upgraded = { 
-            ...DEFAULT_PRICING_RATES, 
-            ...parsed, 
-            bwPerPage: Math.max(200, parsed?.bwPerPage || 200), 
-            colorPerPage: Math.max(500, parsed?.colorPerPage || 500),
-            promoPaperPrice: parsed?.promoPaperPrice ?? 99
-          };
-          setRates(upgraded);
-          localStorage.setItem('a4_pricing_rates', JSON.stringify(upgraded));
+          localStorage.setItem('a4_pricing_rates', JSON.stringify(DEFAULT_PRICING_RATES));
         }
       } else {
         localStorage.setItem('a4_pricing_rates', JSON.stringify(DEFAULT_PRICING_RATES));
@@ -374,7 +365,7 @@ export default function App() {
 
     // Fetch initial pricing rates from Firebase Firestore (Global Cloud Source)
     getPricingRatesFromCloud().then(cloudRates => {
-      if (cloudRates && cloudRates.bwPerPage) {
+      if (cloudRates && typeof cloudRates.bwPerPage === 'number') {
         const valid = {
           ...DEFAULT_PRICING_RATES,
           ...cloudRates,
@@ -388,12 +379,14 @@ export default function App() {
     }).catch(() => {});
 
     fetch('/api/pricing')
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (data && data.bwPerPage) {
-          const validRates = data.bwPerPage < 200 
-            ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500, promoPaperPrice: data.promoPaperPrice ?? 99 } 
-            : { ...DEFAULT_PRICING_RATES, ...data, promoPaperPrice: data.promoPaperPrice ?? 99 };
+        if (data && typeof data.bwPerPage === 'number') {
+          const validRates = {
+            ...DEFAULT_PRICING_RATES,
+            ...data,
+            promoPaperPrice: data.promoPaperPrice ?? 99
+          };
           setRates(validRates);
           try {
             localStorage.setItem('a4_pricing_rates', JSON.stringify(validRates));
@@ -1091,6 +1084,7 @@ export default function App() {
           {currentView === 'sheets' && (
             <SheetsHub
               sheets={sheets}
+              rates={rates}
               onSelectSheetForPrint={handleSelectSheetForPrint}
               onAddSheet={handleAddSheet}
             />

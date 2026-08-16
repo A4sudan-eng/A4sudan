@@ -1,0 +1,661 @@
+export interface CollegeDepartment {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface UniversityCollege {
+  id: string;
+  name: string;
+  description: string;
+  badge?: string;
+  isTopBuyer?: boolean;
+  levelsCount: number; // 4 or 5 levels for Bachelor
+  degreeType?: 'bachelor' | 'diploma' | 'both';
+  departments: CollegeDepartment[];
+  active?: boolean;
+}
+
+export interface UniversityInfo {
+  id: string;
+  name: string;
+  shortName: string;
+  description: string;
+  badge: string;
+  collegesCount: number;
+  colleges: UniversityCollege[];
+  active?: boolean;
+}
+
+export const NEELAIN_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'commerce',
+    name: 'كلية التجارة',
+    description: 'المحاسبة، إدارة الأعمال، والتأمين — الكلية الأكثر إقبالاً وطلباً لشيتات ومذكرات A4 Sudan بالموقع',
+    badge: '🔥 الكلية الأكثر طلباً 👑',
+    isTopBuyer: true,
+    levelsCount: 4,
+    departments: [
+      { id: 'محاسبة', name: 'قسم المحاسبة', description: 'مبادئ المحاسبة، المحاسبة المالية، الشركات، والتكاليف' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'مبادئ الإدارة، التسويق، السلوك التنظيمي، وإدارة الموارد البشرية' },
+      { id: 'تأمين', name: 'قسم التأمين', description: 'مبادئ التأمين، إدارة المخاطر، التكافل الإسلامي، والتأمين التجاري' },
+    ],
+  },
+  {
+    id: 'computer_science',
+    name: 'كلية علوم الحاسوب وتقانة المعلومات',
+    description: 'علوم الحاسوب، تقانة المعلومات، نظم المعلومات، وهندسة البرمجيات (بكالوريوس الشرف 5 سنوات)',
+    badge: 'معتمدة • 5 مستويات',
+    levelsCount: 5,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'البرمجة، هياكل البيانات، الخوارزميات، والذكاء الاصطناعي' },
+      { id: 'تقانة المعلومات', name: 'قسم تقانة المعلومات', description: 'شبكات الحاسوب، أمن المعلومات، وإدارة النظم' },
+      { id: 'نظم المعلومات', name: 'قسم نظم المعلومات', description: 'قواعد البيانات، تحليل وتصميم النظم، ونظم إدارة الأعمال' },
+      { id: 'هندسة البرمجيات', name: 'قسم هندسة البرمجيات', description: 'تصميم وبناء النظم البرمجية، اختبار الجودة، وهندسة المتطلبات' },
+    ],
+  },
+  {
+    id: 'law',
+    name: 'كلية القانون',
+    description: 'القانون العام، القانون الخاص، الشريعة والقانون',
+    levelsCount: 4,
+    departments: [
+      { id: 'القانون العام', name: 'قسم القانون العام', description: 'القانون الدستوري، القانون الإداري، والجنائي' },
+      { id: 'القانون الخاص', name: 'قسم القانون الخاص', description: 'القانون المدني، التجاري، والالتزامات والعقود' },
+      { id: 'الشريعة والقانون', name: 'قسم الشريعة والقانون', description: 'أصول الفقه، المعاملات الماليّة، والأحوال الشخصية' },
+    ],
+  },
+  {
+    id: 'economic_social',
+    name: 'كلية الدراسات الاقتصادية والاجتماعية',
+    description: 'الاقتصاد، العلوم السياسية، الإحصاء والديمغرافيا، والاجتماع والأنثروبولوجيا',
+    levelsCount: 4,
+    departments: [
+      { id: 'الاقتصاد', name: 'قسم الاقتصاد', description: 'التحليل الاقتصادي الجزئي والكلي، التجارة الدولية، والتنمية' },
+      { id: 'العلوم السياسية', name: 'قسم العلوم السياسية', description: 'العلاقات الدولية، الفكر السياسي، والنظم السياسية المقارنة' },
+      { id: 'الإحصاء والديمغرافيا', name: 'قسم الإحصاء والديمغرافيا', description: 'التحليل الإحصائي، الدراسات السكانية، وعلم البيانات' },
+      { id: 'الاجتماع والأنثروبولوجيا', name: 'قسم الاجتماع والأنثروبولوجيا', description: 'علم الاجتماع، البحث الاجتماعي، والتنمية البشرية' },
+    ],
+  },
+  {
+    id: 'arts',
+    name: 'كلية الآداب',
+    description: 'اللغة العربية، اللغة الإنجليزية، الإعلام، علم المكتبات، علم النفس، الجغرافيا، والتاريخ',
+    levelsCount: 4,
+    departments: [
+      { id: 'اللغة العربية', name: 'قسم اللغة العربية', description: 'النحو، الصرف، أدب وأغراض الشعر العربي، والنقد' },
+      { id: 'اللغة الإنجليزية', name: 'قسم اللغة الإنجليزية', description: 'اللغويات التطبيقية، الأدب العالمي، والترجمة' },
+      { id: 'الإعلام والاتصال', name: 'قسم الإعلام والاتصال', description: 'الصحافة والنشر، العلاقات العامة، والإذاعة والتلفزيون' },
+      { id: 'علم المكتبات والمعلومات', name: 'قسم علم المكتبات والمعلومات', description: 'إدارة نظم المعلومات، الفهرسة، والتصنيف الرقمي' },
+      { id: 'علم النفس', name: 'قسم علم النفس', description: 'علم النفس العام، الإكلينيكي، والتطوير السلوكي' },
+      { id: 'الجغرافيا والبيئة', name: 'قسم الجغرافيا والبيئة', description: 'الجغرافيا الطبيعية والبشرية ونظم المعلومات الجغرافية GIS' },
+      { id: 'التاريخ والحضارة', name: 'قسم التاريخ والحضارة', description: 'التاريخ القديم، الإسلامي، والحديث والمعاصر' },
+    ],
+  },
+];
+
+export const SUST_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'sust_cs',
+    name: 'كلية علوم الحاسوب وتقانة المعلومات',
+    description: 'علوم الحاسوب، تقانة المعلومات، هندسة البرمجيات، ونظم المعلومات',
+    badge: 'متاحة ✓',
+    levelsCount: 5,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'البرمجة بلغة C++ و Java، الخوارزميات، والذكاء الاصطناعي' },
+      { id: 'تقانة المعلومات', name: 'قسم تقانة المعلومات', description: 'الشبكات، أمن المعلومات، وبرمجة المواقع' },
+      { id: 'هندسة البرمجيات', name: 'قسم هندسة البرمجيات', description: 'تطوير النظم البرمجية ومعمارية البرمجيات' },
+      { id: 'نظم المعلومات', name: 'قسم نظم المعلومات', description: 'قواعد البيانات، وتحليل النظم الإدارية' },
+    ],
+  },
+  {
+    id: 'sust_eng',
+    name: 'كلية الهندسة',
+    description: 'الهندسة المدنية، الهندسة الكهربائية، الميكانيكية، والإلكترونية',
+    levelsCount: 5,
+    departments: [
+      { id: 'الهندسة المدنية', name: 'قسم الهندسة المدنية', description: 'الإنشاءات، الميكانيكا، والمساحة' },
+      { id: 'الهندسة الكهربائية', name: 'قسم الهندسة الكهربائية', description: 'القدرة، الاتصالات، والتحكم الآلي' },
+      { id: 'الهندسة الميكانيكية', name: 'قسم الهندسة الميكانيكية', description: 'التصميم الميكانيكي، الديناميكا الحرارية، والتصنيع' },
+      { id: 'الهندسة الإلكترونية', name: 'قسم الهندسة الإلكترونية', description: 'الدوائر الإلكترونية، والمعالجات الدقيقة' },
+    ],
+  },
+  {
+    id: 'sust_business',
+    name: 'كلية الدراسات التجارية',
+    description: 'المحاسبة والتمويل، إدارة الأعمال، التسويق، والتكاليف',
+    levelsCount: 4,
+    departments: [
+      { id: 'المحاسبة والتمويل', name: 'قسم المحاسبة والتمويل', description: 'المحاسبة المالية، المراجعة، والتمويل' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'الإدارة الاستراتيجية، وإدارة العمليات' },
+      { id: 'التسويق', name: 'قسم التسويق', description: 'سلوك المستهلك، التسويق الرقمي، والمبيعات' },
+    ],
+  },
+  {
+    id: 'sust_science',
+    name: 'كلية العلوم',
+    description: 'الفيزياء، الكيمياء، الرياضيات والمختبرات',
+    levelsCount: 4,
+    departments: [
+      { id: 'الفيزياء', name: 'قسم الفيزياء', description: 'الفيزياء الحديثة، والإلكترونيات' },
+      { id: 'الكيمياء', name: 'قسم الكيمياء', description: 'الكيمياء العضوية، وغير العضوية، والتحليلية' },
+      { id: 'الرياضيات', name: 'قسم الرياضيات', description: 'التفاضل، التكامل، والرياضيات التطبيقية' },
+    ],
+  },
+  {
+    id: 'sust_edu',
+    name: 'كلية التربية',
+    description: 'التربية التقنية والعلوم التربوية',
+    levelsCount: 4,
+    departments: [
+      { id: 'التربية التقنية', name: 'قسم التربية التقنية', description: 'التعليم الفني والتقني' },
+      { id: 'العلوم التربوية', name: 'قسم العلوم التربوية', description: 'عالم النفس التربوي والمناهج' },
+    ],
+  },
+];
+
+export const OMDURMAN_ISLAMIC_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'oiu_sharia_law',
+    name: 'كلية الشريعة والقانون',
+    description: 'الشريعة الإسلامية، القانون الخاص والعام، وأصول الفقه',
+    badge: 'متاحة ✓',
+    levelsCount: 4,
+    departments: [
+      { id: 'الشريعة الإسلامية', name: 'قسم الشريعة الإسلامية', description: 'الفقه المقارن والمستجدات الفقهية' },
+      { id: 'القانون العام والخاص', name: 'قسم القانون العام والخاص', description: 'القانون الدستوري والمدني والجنائي' },
+      { id: 'أصول الفقه', name: 'قسم أصول الفقه', description: 'القواعد الفقهية وأصول الاستنباط' },
+    ],
+  },
+  {
+    id: 'oiu_econ_admin',
+    name: 'كلية الاقتصاد والعلوم الإدارية',
+    description: 'المحاسبة، إدارة الأعمال، الاقتصاد الإسلامي، والعلوم السياسية',
+    levelsCount: 4,
+    departments: [
+      { id: 'المحاسبة', name: 'قسم المحاسبة', description: 'المحاسبة المالية والمحاسبة الإسلامية' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'التنظيم والإدارة والتخطيط الاستراتيجي' },
+      { id: 'الاقتصاد الإسلامي', name: 'قسم الاقتصاد الإسلامي', description: 'المعاملات المالية الإسلامية والمصارف' },
+      { id: 'العلوم السياسية', name: 'قسم العلوم السياسية', description: 'الفكر السياسي والعلاقات الدولية' },
+    ],
+  },
+  {
+    id: 'oiu_computer',
+    name: 'كلية الحاسوب وتقانة المعلومات',
+    description: 'علوم الحاسوب، تقانة المعلومات، ونظم المعلومات',
+    levelsCount: 4,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'البرمجة وقواعد البيانات والخوارزميات' },
+      { id: 'تقانة المعلومات', name: 'قسم تقانة المعلومات', description: 'الشبكات وتطبيقات الويب' },
+    ],
+  },
+  {
+    id: 'oiu_usul',
+    name: 'كلية أصول الدين',
+    description: 'العقيدة والمذاهب، السنة وعلوم الحديث، والتفسير',
+    levelsCount: 4,
+    departments: [
+      { id: 'العقيدة والمذاهب', name: 'قسم العقيدة والمذاهب', description: 'علم الكلام والعقيدة الإسلامية' },
+      { id: 'السنة وعلوم الحديث', name: 'قسم السنة وعلوم الحديث', description: 'مصطلح الحديث والشارحين' },
+      { id: 'التفسير والعلوم القرآنية', name: 'قسم التفسير والعلوم القرآنية', description: 'مناهج المفسرين وقواعد التفسير' },
+    ],
+  },
+];
+
+export const BAHRI_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'bahri_admin',
+    name: 'كلية العلوم الإدارية',
+    description: 'المحاسبة، إدارة الأعمال، التسويق، والنظم الإدارية',
+    badge: 'متاحة ✓',
+    levelsCount: 4,
+    departments: [
+      { id: 'المحاسبة', name: 'قسم المحاسبة', description: 'المحاسبة الإدارية والمالية والتكاليف' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'إدارة السلوك والقيادة والموارد البشرية' },
+      { id: 'التسويق', name: 'قسم التسويق', description: 'إدارة المنتجات وأبحاث السوق' },
+    ],
+  },
+  {
+    id: 'bahri_cs',
+    name: 'كلية علوم الحاسوب وتكنولوجيا المعلومات',
+    description: 'علوم الحاسوب، تكنولوجيا المعلومات، وشبكات الحاسوب',
+    levelsCount: 4,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'البرمجة المتقدمة ونظم التشغيل' },
+      { id: 'تكنولوجيا المعلومات', name: 'قسم تكنولوجيا المعلومات', description: 'إدارة نظم المعلومات والشبكات' },
+      { id: 'شبكات الحاسوب', name: 'قسم شبكات الحاسوب', description: 'بروتوكولات الاتصال وأمن الشبكات' },
+    ],
+  },
+  {
+    id: 'bahri_engineering',
+    name: 'كلية الهندسة والعمارة',
+    description: 'الهندسة المدنية والكهربائية والميكانيكية',
+    levelsCount: 5,
+    departments: [
+      { id: 'الهندسة المدنية', name: 'قسم الهندسة المدنية', description: 'التصميم الإنشائي والمساحة' },
+      { id: 'الكهرباء والميكانيكا', name: 'قسم الكهرباء والميكانيكا', description: 'الأنظمة الكهربائية والآلات' },
+    ],
+  },
+  {
+    id: 'bahri_econ',
+    name: 'كلية الاقتصاد والدراسات الاجتماعية',
+    description: 'الاقتصاد، العلاقات الدولية، والاجتماع',
+    levelsCount: 4,
+    departments: [
+      { id: 'الاقتصاد', name: 'قسم الاقتصاد', description: 'الاقتصاد الكلي والجزئي والتنمية' },
+      { id: 'العلاقات الدولية', name: 'قسم العلاقات الدولية', description: 'الدبلوماسية والمنظمات الدولية' },
+    ],
+  },
+];
+
+export const OPEN_UNI_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'open_cs_it',
+    name: 'برنامج علوم الحاسوب وتكنولوجيا المعلومات',
+    description: 'علوم الحاسوب، تكنولوجيا المعلومات، ونظم المعلومات',
+    badge: 'متاحة ✓',
+    levelsCount: 4,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'أساسيات البرمجة وقواعد البيانات' },
+      { id: 'تكنولوجيا المعلومات', name: 'قسم تكنولوجيا المعلومات', description: 'نظم الشبكات وتصميم المواقع' },
+      { id: 'نظم المعلومات', name: 'قسم نظم المعلومات', description: 'تحليل النظم وإدارة قواعد البيانات' },
+    ],
+  },
+  {
+    id: 'open_admin_finance',
+    name: 'برنامج العلوم الإدارية والمالية',
+    description: 'المحاسبة، إدارة الأعمال، والمصارف والتمويل',
+    levelsCount: 4,
+    departments: [
+      { id: 'المحاسبة', name: 'قسم المحاسبة', description: 'المحاسبة المالية والتكاليف' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'مبادئ الإدارة والتسويق' },
+      { id: 'المصارف والتمويل', name: 'قسم المصارف والتمويل', description: 'إدارة البنوك والأسواق المالية' },
+    ],
+  },
+  {
+    id: 'open_edu',
+    name: 'برنامج العلوم التربوية',
+    description: 'التربية الخاصة، الإدارة التربوية، ومعلم الأساس',
+    levelsCount: 4,
+    departments: [
+      { id: 'التربية الخاصة', name: 'قسم التربية الخاصة', description: 'مناهج وطرق تعليم ذوي الاحتياجات' },
+      { id: 'الإدارة التربوية', name: 'قسم الإدارة التربوية', description: 'التخطيط التربوي وتطوير المدارس' },
+    ],
+  },
+  {
+    id: 'open_law',
+    name: 'برنامج القانون والشريعة',
+    description: 'القانون العام والشريعة والقانون',
+    levelsCount: 4,
+    departments: [
+      { id: 'القانون العام', name: 'قسم القانون العام', description: 'القانون الجنائي والدستوري' },
+      { id: 'الشريعة والقانون', name: 'قسم الشريعة والقانون', description: 'أصول الفقه والمعاملات' },
+    ],
+  },
+];
+
+export const IMAM_ALHADI_COLLEGES: UniversityCollege[] = [
+  {
+    id: 'hadi_cs',
+    name: 'كلية علوم الحاسوب وتقانة المعلومات',
+    description: 'علوم الحاسوب، تقانة المعلومات، وشبكات الحاسوب',
+    badge: 'متاحة ✓',
+    levelsCount: 4,
+    departments: [
+      { id: 'علوم الحاسوب', name: 'قسم علوم الحاسوب', description: 'البرمجة وهيكلة البيانات والنظم' },
+      { id: 'تقانة المعلومات', name: 'قسم تقانة المعلومات', description: 'الشبكات وتطبيقات الويب والأمن' },
+      { id: 'شبكات الحاسوب', name: 'قسم شبكات الحاسوب', description: 'إدارة الشبكات والأنظمة الموزعة' },
+    ],
+  },
+  {
+    id: 'hadi_admin',
+    name: 'كلية العلوم الإدارية والمالية',
+    description: 'المحاسبة والتمويل، إدارة الأعمال، والتسويق',
+    levelsCount: 4,
+    departments: [
+      { id: 'المحاسبة والتمويل', name: 'قسم المحاسبة والتمويل', description: 'المحاسبة المالية والمراجعة' },
+      { id: 'إدارة الأعمال', name: 'قسم إدارة الأعمال', description: 'الإدارة العامة والموارد البشرية' },
+      { id: 'التسويق', name: 'قسم التسويق', description: 'استراتيجيات التسويق والمبيعات' },
+    ],
+  },
+  {
+    id: 'hadi_law',
+    name: 'كلية الشريعة والقانون',
+    description: 'القانون العام، القانون الخاص، والشريعة',
+    levelsCount: 4,
+    departments: [
+      { id: 'القانون العام', name: 'قسم القانون العام', description: 'القانون الدستوري والإداري' },
+      { id: 'القانون الخاص', name: 'قسم القانون الخاص', description: 'القانون المدني والتجاري' },
+      { id: 'الشريعة والقانون', name: 'قسم الشريعة والقانون', description: 'الفقه وأصول الاستنباط' },
+    ],
+  },
+  {
+    id: 'hadi_econ',
+    name: 'كلية الاقتصاد والعلوم السياسية',
+    description: 'الاقتصاد والعلوم السياسية والعلاقات العامة',
+    levelsCount: 4,
+    departments: [
+      { id: 'الاقتصاد', name: 'قسم الاقتصاد', description: 'التحليل الاقتصادي والتنمية' },
+      { id: 'العلوم السياسية', name: 'قسم العلوم السياسية', description: 'النظم السياسية والعلاقات الدولية' },
+    ],
+  },
+];
+
+export const SUDAN_UNIVERSITIES: UniversityInfo[] = [
+  {
+    id: 'neelain',
+    name: 'جامعة النيلين',
+    shortName: 'النيلين',
+    description: 'كليات: التجارة، علوم الحاسوب، القانون، الاقتصاد، والآداب — المقر الرئيسي لشيتات A4 Sudan',
+    badge: 'جامعة رئيسية 👑',
+    collegesCount: NEELAIN_COLLEGES.length,
+    colleges: NEELAIN_COLLEGES,
+  },
+  {
+    id: 'sust',
+    name: 'جامعة السودان للعلوم والتكنولوجيا',
+    shortName: 'السودان للعلوم والتكنولوجيا',
+    description: 'كليات: علوم الحاسوب، الهندسة، الدراسات التجارية، العلوم، والتربية',
+    badge: 'متاحة الآن ✓',
+    collegesCount: SUST_COLLEGES.length,
+    colleges: SUST_COLLEGES,
+  },
+  {
+    id: 'omdurman_islamic',
+    name: 'جامعة أم درمان الإسلامية',
+    shortName: 'أم درمان الإسلامية',
+    description: 'كليات: الشريعة والقانون، الاقتصاد، الحاسوب، أصول الدين، والتربية',
+    badge: 'متاحة الآن ✓',
+    collegesCount: OMDURMAN_ISLAMIC_COLLEGES.length,
+    colleges: OMDURMAN_ISLAMIC_COLLEGES,
+  },
+  {
+    id: 'bahri',
+    name: 'جامعة بحري',
+    shortName: 'جامعة بحري',
+    description: 'كليات: العلوم الإدارية، الحاسوب، الهندسة والعمارة، الاقتصاد، والعلوم',
+    badge: 'متاحة الآن ✓',
+    collegesCount: BAHRI_COLLEGES.length,
+    colleges: BAHRI_COLLEGES,
+  },
+  {
+    id: 'open_university',
+    name: 'جامعة السودان المفتوحة',
+    shortName: 'السودان المفتوحة',
+    description: 'برامج: علوم الحاسوب، العلوم الإدارية والمالية، التربية، والقانون',
+    badge: 'متاحة الآن ✓',
+    collegesCount: OPEN_UNI_COLLEGES.length,
+    colleges: OPEN_UNI_COLLEGES,
+  },
+  {
+    id: 'imam_alhadi',
+    name: 'جامعة الإمام الهادي',
+    shortName: 'الإمام الهادي',
+    description: 'كليات: علوم الحاسوب، العلوم الإدارية والمالية، الشريعة والقانون، والاقتصاد',
+    badge: 'متاحة الآن ✓',
+    collegesCount: IMAM_ALHADI_COLLEGES.length,
+    colleges: IMAM_ALHADI_COLLEGES,
+  },
+];
+
+export interface AcademicSemester {
+  id: number;
+  title: string;
+  label: string;
+  desc: string;
+  active?: boolean;
+}
+
+export interface AcademicLevel {
+  levelNum: number;
+  title: string;
+  yearLabel: string;
+  description: string;
+  badge: string;
+  active?: boolean;
+  semesters: AcademicSemester[];
+}
+
+export const ACADEMIC_LEVELS: AcademicLevel[] = [
+  {
+    levelNum: 1,
+    title: 'المستوى الأول',
+    yearLabel: 'السنة الأولى',
+    description: 'يحتوي على الفصل الدراسي الأول والفصل الدراسي الثاني',
+    badge: 'المستوى 1',
+    active: true,
+    semesters: [
+      { id: 1, title: 'الفصل الدراسي الأول', label: 'الفصل 1', desc: 'المواد والمقررات الدراسية للفصل الأول', active: true },
+      { id: 2, title: 'الفصل الدراسي الثاني', label: 'الفصل 2', desc: 'المواد والمقررات الدراسية للفصل الثاني', active: true },
+    ],
+  },
+  {
+    levelNum: 2,
+    title: 'المستوى الثاني',
+    yearLabel: 'السنة الثانية',
+    description: 'يحتوي على الفصل الدراسي الثالث والفصل الدراسي الرابع',
+    badge: 'المستوى 2',
+    active: true,
+    semesters: [
+      { id: 3, title: 'الفصل الدراسي الثالث', label: 'الفصل 3', desc: 'المواد والمقررات الدراسية للفصل الثالث', active: true },
+      { id: 4, title: 'الفصل الدراسي الرابع', label: 'الفصل 4', desc: 'المواد والمقررات الدراسية للفصل الرابع', active: true },
+    ],
+  },
+  {
+    levelNum: 3,
+    title: 'المستوى الثالث',
+    yearLabel: 'السنة الثالثة',
+    description: 'يحتوي على الفصل الدراسي الخامس والفصل الدراسي السادس',
+    badge: 'المستوى 3',
+    active: true,
+    semesters: [
+      { id: 5, title: 'الفصل الدراسي الخامس', label: 'الفصل 5', desc: 'المواد والمقررات الدراسية للفصل الخامس', active: true },
+      { id: 6, title: 'الفصل الدراسي السادس', label: 'الفصل 6', desc: 'المواد والمقررات الدراسية للفصل السادس', active: true },
+    ],
+  },
+  {
+    levelNum: 4,
+    title: 'المستوى الرابع',
+    yearLabel: 'السنة الرابعة (سنة التخرج)',
+    description: 'يحتوي على الفصل الدراسي السابع والفصل الدراسي الثامن',
+    badge: 'المستوى 4',
+    active: true,
+    semesters: [
+      { id: 7, title: 'الفصل الدراسي السابع', label: 'الفصل 7', desc: 'المواد والمقررات الدراسية للفصل السابع', active: true },
+      { id: 8, title: 'الفصل الدراسي الثامن', label: 'الفصل 8', desc: 'المواد والمقررات الدراسية للفصل الثامن (التخرج)', active: true },
+    ],
+  },
+  {
+    levelNum: 5,
+    title: 'المستوى الخامس',
+    yearLabel: 'السنة الخامسة (بكالوريوس الشرف / التخصصات الممتدة)',
+    description: 'يحتوي على الفصل الدراسي التاسع والفصل الدراسي العاشر',
+    badge: 'المستوى 5',
+    active: true,
+    semesters: [
+      { id: 9, title: 'الفصل الدراسي التاسع', label: 'الفصل 9', desc: 'المواد والمقررات الدراسية للفصل التاسع', active: true },
+      { id: 10, title: 'الفصل الدراسي العاشر', label: 'الفصل 10', desc: 'المواد والمقررات الدراسية للفصل العاشر (مشاريع التخرج)', active: true },
+    ],
+  },
+];
+
+export const getStoredAcademicLevels = (): AcademicLevel[] => {
+  try {
+    const raw = localStorage.getItem('a4_academic_levels_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored academic levels:', e);
+  }
+  return ACADEMIC_LEVELS;
+};
+
+export const saveStoredAcademicLevels = (levels: AcademicLevel[]): void => {
+  try {
+    localStorage.setItem('a4_academic_levels_data', JSON.stringify(levels));
+    window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: levels }));
+
+    // 1. Cross-tab instant broadcast
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_academic_levels_channel');
+        bc.postMessage({ type: 'ACADEMIC_LEVELS_UPDATED', list: levels });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/academic-levels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(levels),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof fb.saveAcademicLevelsToCloud === 'function') {
+          fb.saveAcademicLevelsToCloud(levels).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    console.error('Error saving stored academic levels:', e);
+  }
+};
+
+export const getStoredUniversities = (): UniversityInfo[] => {
+  try {
+    const raw = localStorage.getItem('a4_universities_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored universities:', e);
+  }
+  return SUDAN_UNIVERSITIES;
+};
+
+export interface DegreeTrackInfo {
+  id: 'bachelor' | 'diploma';
+  name: string;
+  badge: string;
+  description: string;
+  levelsCountDesc: string;
+  active: boolean;
+}
+
+export const DEFAULT_DEGREE_TRACKS: DegreeTrackInfo[] = [
+  {
+    id: 'bachelor',
+    name: 'بكالوريوس',
+    badge: '🎓 مسار البكالوريوس',
+    description: 'المستويات من الأول حتى الرابع / الخامس (بكالوريوس الشرف والدراسات الممتدة)',
+    levelsCountDesc: '4 - 5 مستويات دراسية معتمدة (حتى 10 فصول)',
+    active: true,
+  },
+  {
+    id: 'diploma',
+    name: 'دبلوم',
+    badge: '📜 مسار الدبلوم التقني',
+    description: 'المستويات الأول والثاني (برامج الدبلوم التقني والتطبيقي)',
+    levelsCountDesc: 'مستويان دراسيان معتمدان (4 فصول دراسية)',
+    active: true,
+  },
+];
+
+export const getStoredDegreeTracks = (): DegreeTrackInfo[] => {
+  try {
+    const raw = localStorage.getItem('a4_degree_tracks_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored degree tracks:', e);
+  }
+  return DEFAULT_DEGREE_TRACKS;
+};
+
+export const saveStoredDegreeTracks = (tracks: DegreeTrackInfo[]): void => {
+  try {
+    localStorage.setItem('a4_degree_tracks_data', JSON.stringify(tracks));
+    window.dispatchEvent(new CustomEvent('a4_degree_tracks_updated', { detail: tracks }));
+
+    // 1. Broadcast channel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_degree_tracks_channel');
+        bc.postMessage({ type: 'DEGREE_TRACKS_UPDATED', list: tracks });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/degree-tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tracks),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof (fb as any).saveDegreeTracksToCloud === 'function') {
+          (fb as any).saveDegreeTracksToCloud(tracks).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    console.error('Error saving stored degree tracks:', e);
+  }
+};
+
+export const saveStoredUniversities = (unis: UniversityInfo[]): void => {
+  try {
+    localStorage.setItem('a4_universities_data', JSON.stringify(unis));
+    window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: unis }));
+
+    // 1. Cross-tab instant broadcast
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_universities_channel');
+        bc.postMessage({ type: 'UNIVERSITIES_UPDATED', list: unis });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/universities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(unis),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence (global across all devices & browsers)
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof fb.saveUniversitiesToCloud === 'function') {
+          fb.saveUniversitiesToCloud(unis).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    console.error('Error saving stored universities:', e);
+  }
+};
