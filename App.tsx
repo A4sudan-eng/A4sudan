@@ -32,7 +32,11 @@ import {
   saveUniversitiesToCloud,
   getAcademicLevelsFromCloud,
   subscribeToCloudAcademicLevels,
-  saveAcademicLevelsToCloud
+  saveAcademicLevelsToCloud,
+  subscribeToCloudDegreeTracks,
+  savePricingRatesToCloud,
+  getPricingRatesFromCloud,
+  subscribeToCloudPricingRates
 } from './lib/firebase';
 import { getStoredUniversities, saveStoredUniversities, getStoredAcademicLevels, saveStoredAcademicLevels } from './data/neelainData';
 import { recordVisit } from './utils/analyticsTracker';
@@ -344,10 +348,20 @@ export default function App() {
       if (localRates) {
         const parsed = JSON.parse(localRates);
         if (parsed && parsed.bwPerPage && parsed.bwPerPage >= 200) {
-          setRates(parsed);
+          setRates({
+            ...DEFAULT_PRICING_RATES,
+            ...parsed,
+            promoPaperPrice: parsed.promoPaperPrice ?? 99
+          });
         } else {
           // Upgrade old rates (< 200) to new rate standards
-          const upgraded = { ...DEFAULT_PRICING_RATES, ...parsed, bwPerPage: Math.max(200, parsed?.bwPerPage || 200), colorPerPage: Math.max(500, parsed?.colorPerPage || 500) };
+          const upgraded = { 
+            ...DEFAULT_PRICING_RATES, 
+            ...parsed, 
+            bwPerPage: Math.max(200, parsed?.bwPerPage || 200), 
+            colorPerPage: Math.max(500, parsed?.colorPerPage || 500),
+            promoPaperPrice: parsed?.promoPaperPrice ?? 99
+          };
           setRates(upgraded);
           localStorage.setItem('a4_pricing_rates', JSON.stringify(upgraded));
         }
@@ -358,11 +372,28 @@ export default function App() {
       console.error('Error loading pricing rates from localStorage', e);
     }
 
+    // Fetch initial pricing rates from Firebase Firestore (Global Cloud Source)
+    getPricingRatesFromCloud().then(cloudRates => {
+      if (cloudRates && cloudRates.bwPerPage) {
+        const valid = {
+          ...DEFAULT_PRICING_RATES,
+          ...cloudRates,
+          promoPaperPrice: cloudRates.promoPaperPrice ?? 99
+        };
+        setRates(valid);
+        try {
+          localStorage.setItem('a4_pricing_rates', JSON.stringify(valid));
+        } catch (e) {}
+      }
+    }).catch(() => {});
+
     fetch('/api/pricing')
       .then(res => res.json())
       .then(data => {
         if (data && data.bwPerPage) {
-          const validRates = data.bwPerPage < 200 ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500 } : data;
+          const validRates = data.bwPerPage < 200 
+            ? { ...DEFAULT_PRICING_RATES, ...data, bwPerPage: 200, colorPerPage: 500, promoPaperPrice: data.promoPaperPrice ?? 99 } 
+            : { ...DEFAULT_PRICING_RATES, ...data, promoPaperPrice: data.promoPaperPrice ?? 99 };
           setRates(validRates);
           try {
             localStorage.setItem('a4_pricing_rates', JSON.stringify(validRates));
@@ -520,11 +551,29 @@ export default function App() {
         })
       : null;
 
+    // Subscribe to real-time pricing rates updates from Firebase Firestore (Global Sync across all clients)
+    const unsubscribeCloudPricing = (typeof subscribeToCloudPricingRates === 'function')
+      ? subscribeToCloudPricingRates((cloudRates) => {
+          if (cloudRates && cloudRates.bwPerPage) {
+            const valid = {
+              ...DEFAULT_PRICING_RATES,
+              ...cloudRates,
+              promoPaperPrice: cloudRates.promoPaperPrice ?? 99
+            };
+            setRates(valid);
+            try {
+              localStorage.setItem('a4_pricing_rates', JSON.stringify(valid));
+            } catch (e) {}
+          }
+        })
+      : null;
+
     // BroadcastChannel listener for instant cross-tab order deletion and creation
     let broadcastChannel: BroadcastChannel | null = null;
     let universitiesBroadcastChannel: BroadcastChannel | null = null;
     let academicLevelsBroadcastChannel: BroadcastChannel | null = null;
     let degreeTracksBroadcastChannel: BroadcastChannel | null = null;
+    let ratesBroadcastChannel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         broadcastChannel = new BroadcastChannel('a4_orders_channel');
@@ -584,7 +633,53 @@ export default function App() {
           }
         };
       } catch (e) {}
+
+      try {
+        ratesBroadcastChannel = new BroadcastChannel('a4_rates_channel');
+        ratesBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'RATES_UPDATED' && event?.data?.rates) {
+            const updated = {
+              ...DEFAULT_PRICING_RATES,
+              ...event.data.rates,
+              promoPaperPrice: event.data.rates.promoPaperPrice ?? 99
+            };
+            setRates(updated);
+            try {
+              localStorage.setItem('a4_pricing_rates', JSON.stringify(updated));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
     }
+
+    // CustomEvent and Storage listener for instant cross-component updates
+    const handleRatesUpdatedEvent = (e: any) => {
+      if (e?.detail && typeof e.detail.bwPerPage === 'number') {
+        const updated = {
+          ...DEFAULT_PRICING_RATES,
+          ...e.detail,
+          promoPaperPrice: e.detail.promoPaperPrice ?? 99
+        };
+        setRates(updated);
+      }
+    };
+    window.addEventListener('a4_pricing_rates_updated', handleRatesUpdatedEvent);
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'a4_pricing_rates' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && typeof parsed.bwPerPage === 'number') {
+            setRates({
+              ...DEFAULT_PRICING_RATES,
+              ...parsed,
+              promoPaperPrice: parsed.promoPaperPrice ?? 99
+            });
+          }
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
 
     // Auto-open APK download modal if link includes ?download_apk=true or ?apk=1 or hash #download-apk
     if (
@@ -601,6 +696,9 @@ export default function App() {
       if (unsubscribeCloudUnis) unsubscribeCloudUnis();
       if (unsubscribeCloudLevels) unsubscribeCloudLevels();
       if (unsubscribeCloudDegreeTracks) unsubscribeCloudDegreeTracks();
+      if (unsubscribeCloudPricing) unsubscribeCloudPricing();
+      window.removeEventListener('a4_pricing_rates_updated', handleRatesUpdatedEvent);
+      window.removeEventListener('storage', handleStorageEvent);
       if (broadcastChannel) {
         try { broadcastChannel.close(); } catch (e) {}
       }
@@ -612,6 +710,9 @@ export default function App() {
       }
       if (degreeTracksBroadcastChannel) {
         try { degreeTracksBroadcastChannel.close(); } catch (e) {}
+      }
+      if (ratesBroadcastChannel) {
+        try { ratesBroadcastChannel.close(); } catch (e) {}
       }
     };
   }, []);
@@ -735,10 +836,41 @@ export default function App() {
   };
 
   const handleUpdateRates = (newRates: PricingRates) => {
-    setRates(newRates);
+    const valid = {
+      ...DEFAULT_PRICING_RATES,
+      ...newRates,
+      promoPaperPrice: newRates.promoPaperPrice ?? 99
+    };
+    setRates(valid);
     try {
-      localStorage.setItem('a4_pricing_rates', JSON.stringify(newRates));
+      localStorage.setItem('a4_pricing_rates', JSON.stringify(valid));
     } catch (e) {}
+
+    // 1. Sync with Firebase Firestore Global Cloud
+    savePricingRatesToCloud(valid).catch(err => {
+      console.warn('Could not save pricing rates to Firestore cloud:', err);
+    });
+
+    // 2. Sync with Backend Express Server
+    fetch('/api/pricing', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(valid),
+    }).catch(err => {
+      console.warn('Could not save pricing rates to backend API:', err);
+    });
+
+    // 3. Dispatch Local CustomEvent for instantaneous reactive re-render
+    window.dispatchEvent(new CustomEvent('a4_pricing_rates_updated', { detail: valid }));
+
+    // 4. Broadcast across local browser windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_rates_channel');
+        bc.postMessage({ type: 'RATES_UPDATED', rates: valid });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleAddSheet = (newSheet: StudySheet) => {
@@ -941,6 +1073,7 @@ export default function App() {
         <main className="pb-12">
           {currentView === 'home' && (
             <HomeView
+              rates={rates}
               onNavigateToSheets={() => setCurrentView('sheets')}
               onNavigateToTrack={() => setCurrentView('track')}
             />

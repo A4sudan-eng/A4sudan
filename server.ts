@@ -35,6 +35,7 @@ async function startServer() {
   const VISITORS_FILE_PATH = path.join(process.cwd(), 'a4_visitors_store.json');
   const DELIVERY_ZONES_FILE_PATH = path.join(process.cwd(), 'a4_delivery_zones_store.json');
   const ACADEMIC_LEVELS_FILE_PATH = path.join(process.cwd(), 'a4_academic_levels_store.json');
+  const PRICING_RATES_FILE_PATH = path.join(process.cwd(), 'a4_pricing_rates_store.json');
 
   function loadOrdersFromStore(): PrintOrder[] {
     try {
@@ -219,8 +220,35 @@ async function startServer() {
     }
   }
 
+  function loadPricingRatesFromStore(): PricingRates {
+    try {
+      if (fs.existsSync(PRICING_RATES_FILE_PATH)) {
+        const raw = fs.readFileSync(PRICING_RATES_FILE_PATH, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.bwPerPage === 'number') {
+          return {
+            ...DEFAULT_PRICING_RATES,
+            ...parsed,
+            promoPaperPrice: typeof parsed.promoPaperPrice === 'number' ? parsed.promoPaperPrice : 99
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent pricing rates file:', err);
+    }
+    return { ...DEFAULT_PRICING_RATES };
+  }
+
+  function savePricingRatesToStore(rates: PricingRates) {
+    try {
+      fs.writeFileSync(PRICING_RATES_FILE_PATH, JSON.stringify(rates, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent pricing rates file:', err);
+    }
+  }
+
   // In-memory persistent state initialized from disk
-  let currentRates: PricingRates = { ...DEFAULT_PRICING_RATES };
+  let currentRates: PricingRates = loadPricingRatesFromStore();
 
   // Initialize Gemini AI Client
   const apiKey = process.env.GEMINI_API_KEY;
@@ -302,6 +330,7 @@ async function startServer() {
   app.put('/api/pricing', (req, res) => {
     if (req.body) {
       currentRates = { ...currentRates, ...req.body };
+      savePricingRatesToStore(currentRates);
       return res.json({ success: true, rates: currentRates });
     }
     res.status(400).json({ error: 'Invalid pricing data' });
