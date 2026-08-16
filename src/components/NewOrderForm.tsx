@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Upload, FileText, Trash2, Plus, Check, MapPin, Phone, User, 
   CreditCard, Truck, Store, Info, Download, Copy, AlertCircle, FileCheck,
@@ -9,6 +9,7 @@ import { PrintFileOptions, PrintOrder, PricingRates, PaperSize, PrintColor, Prin
 import { calculateFilePrice, formatSDG } from '../utils/pricing';
 import { countPdfPages } from '../utils/pdfCounter';
 import { DELIVERY_ZONES } from '../data/initialData';
+import { getStoredDeliveryZones, fetchServerDeliveryZones } from '../utils/deliveryManager';
 import { saveOrderToCloud, auth } from '../lib/firebase';
 import { DeliveryRatesGuide } from './DeliveryRatesGuide';
 import { SUDAN_UNIVERSITIES } from '../data/neelainData';
@@ -33,7 +34,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [institution, setInstitution] = useState('');
   const [specialization, setSpecialization] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('delivery');
-  const [city, setCity] = useState(DELIVERY_ZONES[0].zoneName);
+  const [city, setCity] = useState('');
   const [addressOrCampus, setAddressOrCampus] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [bankakTransactionId, setBankakTransactionId] = useState('');
@@ -44,6 +45,26 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedAccNum, setCopiedAccNum] = useState<string | null>(null);
   const [showDeliveryGuideModal, setShowDeliveryGuideModal] = useState(false);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
+
+  React.useEffect(() => {
+    fetchServerDeliveryZones().then(zones => {
+      if (zones && zones.length > 0) {
+        setDeliveryZones(zones);
+      }
+    });
+
+    const handleDeliveryZonesUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail.zones)) {
+        setDeliveryZones(e.detail.zones);
+      } else {
+        setDeliveryZones(getStoredDeliveryZones());
+      }
+    };
+
+    window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+    return () => window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+  }, []);
 
   // Coupon state & handlers
   const [couponCodeInput, setCouponCodeInput] = useState('');
@@ -387,8 +408,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const totalPagesSum = files.reduce((acc, f) => acc + (f.pageCount * f.copies), 0);
   const totalPrintedSheetsSum = files.reduce((acc, f) => acc + (Math.ceil(f.pageCount / (f.pagesPerSheet || 1)) * f.copies), 0);
   const subtotalSum = files.reduce((acc, f) => acc + f.calculatedPrice, 0);
-  const selectedZone = DELIVERY_ZONES.find(z => z.zoneName === city || city.includes(z.zoneName));
-  const deliveryFee = deliveryMethod === 'pickup' ? 0 : (selectedZone?.fee ?? rates.deliveryFees[city] ?? 5000);
+  
+  const activeDeliveryZones = useMemo(() => deliveryZones.filter(z => z.isActive !== false), [deliveryZones]);
+  const selectedZone = city ? activeDeliveryZones.find(z => z.zoneName === city || z.id === city || city.includes(z.zoneName) || (z.neighborhood && city.includes(z.neighborhood))) : undefined;
+  const deliveryFee = deliveryMethod === 'pickup' ? 0 : (selectedZone?.fee ?? (city ? (rates.deliveryFees[city] ?? 5000) : 0));
   const discountAmount = appliedCoupon ? Math.round((subtotalSum * appliedCoupon.discountPercentage) / 100) : 0;
   const totalAmount = Math.max(0, subtotalSum - discountAmount + deliveryFee);
 
@@ -402,9 +425,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       alert('الرجاء كتابة الاسم الكامل ورقمي الهاتف (الأساسي والثاني) لتواصل مندوب الطباعة والتوصيل');
       return;
     }
-    if (deliveryMethod === 'delivery' && !addressOrCampus.trim()) {
-      alert('الرجاء توضيح عنوان التوصيل أو اسم المجمع الجامعي');
-      return;
+    if (deliveryMethod === 'delivery') {
+      if (!city) {
+        alert('الرجاء اختيار منطقة التوصيل من قائمة (اختيار العنوان)');
+        return;
+      }
+      if (!addressOrCampus.trim()) {
+        alert('الرجاء توضيح عنوان التوصيل التفصيلي أو اسم المجمع الجامعي');
+        return;
+      }
     }
     if (!paymentMethod) {
       alert('الرجاء اختيار طريقة الدفع أولاً (بنكك، أوكاش، أو فوري)');
@@ -848,11 +877,11 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 <div className="flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                   <span className="font-black text-slate-900 text-xs">
-                    المواد والشيتات المحددة ({files.length}):
+                    تفاصيل الشيتات ({files.length}):
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
-                  {totalPagesSum} صفحة إجمالية
+                <span className="text-[10px] font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                  {formatSDG(subtotalSum)}
                 </span>
               </div>
 
@@ -863,7 +892,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                     key={file.id} 
                     className="p-1.5 sm:p-2 flex items-center justify-between gap-1.5 text-xs hover:bg-slate-50 transition-colors"
                   >
-                    {/* File Name & Pages */}
+                    {/* File Name & Copies */}
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <div className="w-6 h-6 bg-emerald-100 text-emerald-800 rounded flex items-center justify-center shrink-0 font-bold">
                         <FileText className="w-3.5 h-3.5" />
@@ -873,7 +902,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                           {file.fileName}
                         </h4>
                         <span className="text-[9px] text-slate-500 font-bold block sm:inline">
-                          ({file.pageCount} صفحة • {file.copies} {file.copies === 1 ? 'نسخة' : 'نسخ'})
+                          ({file.copies} {file.copies === 1 ? 'نسخة' : 'نسخ'})
                         </span>
                       </div>
                     </div>
@@ -1118,36 +1147,82 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   <select
                     value={city}
                     onChange={e => setCity(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-900 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    className={`w-full bg-white border rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none transition-all ${
+                      !city ? 'border-amber-400 text-slate-500 bg-amber-50/20 font-semibold' : 'border-slate-300 text-slate-900'
+                    }`}
                   >
-                    <optgroup label="👑 أمدرمان">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'omdurman').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="💧 بحري وشرق النيل">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'bahri_eastnile').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="🏙️ الخرطوم">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'khartoum').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="📦 باقي الولايات (إرساليات طرود)">
-                      {DELIVERY_ZONES.filter(z => z.regionKey === 'states').map(z => (
-                        <option key={z.id} value={z.zoneName}>
-                          {z.zoneName} ({formatSDG(z.fee)})
-                        </option>
-                      ))}
-                    </optgroup>
+                    <option value="" disabled>
+                      اختيار العنوان
+                    </option>
+                    
+                    {/* أمدرمان وكرري وأمبدة */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'omdurman' || (z.locality && (z.locality.includes('كرري') || z.locality.includes('أمدرمان') || z.locality.includes('أمبدة')))) && (
+                      <optgroup label="👑 ولاية الخرطوم (محلية كرري، أمدرمان، أمبدة)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'omdurman' || (z.locality && (z.locality.includes('كرري') || z.locality.includes('أمدرمان') || z.locality.includes('أمبدة')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* بحري وشرق النيل */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'bahri_eastnile' || (z.locality && (z.locality.includes('بحري') || z.locality.includes('شرق النيل')))) && (
+                      <optgroup label="💧 ولاية الخرطوم (محلية بحري، شرق النيل)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'bahri_eastnile' || (z.locality && (z.locality.includes('بحري') || z.locality.includes('شرق النيل')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* الخرطوم وجبل أولياء */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'khartoum' || (z.locality && (z.locality.includes('الخرطوم') || z.locality.includes('جبل أولياء')))) && (
+                      <optgroup label="🏙️ ولاية الخرطوم (محلية الخرطوم، جبل أولياء)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'khartoum' || (z.locality && (z.locality.includes('الخرطوم') || z.locality.includes('جبل أولياء')))).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.locality ? `${z.locality} • ` : ''}{z.neighborhood || z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* باقي ولايات السودان */}
+                    {activeDeliveryZones.some(z => z.regionKey === 'states' || (z.state && z.state !== 'ولاية الخرطوم')) && (
+                      <optgroup label="📦 إرساليات باقي الولايات (شحن طرود سريع)">
+                        {activeDeliveryZones.filter(z => z.regionKey === 'states' || (z.state && z.state !== 'ولاية الخرطوم')).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.state ? `${z.state} • ` : ''}{z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {/* أية مناطق أخرى مخصصة */}
+                    {activeDeliveryZones.some(z => 
+                      z.regionKey !== 'omdurman' && 
+                      z.regionKey !== 'bahri_eastnile' && 
+                      z.regionKey !== 'khartoum' && 
+                      z.regionKey !== 'states' && 
+                      z.state === 'ولاية الخرطوم' &&
+                      (!z.locality || (!z.locality.includes('كرري') && !z.locality.includes('أمدرمان') && !z.locality.includes('أمبدة') && !z.locality.includes('بحري') && !z.locality.includes('شرق النيل') && !z.locality.includes('الخرطوم') && !z.locality.includes('جبل أولياء')))
+                    ) && (
+                      <optgroup label="📍 مناطق أخرى">
+                        {activeDeliveryZones.filter(z => 
+                          z.regionKey !== 'omdurman' && 
+                          z.regionKey !== 'bahri_eastnile' && 
+                          z.regionKey !== 'khartoum' && 
+                          z.regionKey !== 'states' && 
+                          z.state === 'ولاية الخرطوم' &&
+                          (!z.locality || (!z.locality.includes('كرري') && !z.locality.includes('أمدرمان') && !z.locality.includes('أمبدة') && !z.locality.includes('بحري') && !z.locality.includes('شرق النيل') && !z.locality.includes('الخرطوم') && !z.locality.includes('جبل أولياء')))
+                        ).map(z => (
+                          <option key={z.id} value={z.zoneName}>
+                            {z.zoneName} ({formatSDG(z.fee)})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -1662,63 +1737,39 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                   {/* Materials list summary */}
                   {files.length > 0 && (
                     <div className="bg-emerald-950/80 p-3 rounded-xl border border-emerald-700/80 text-xs space-y-2">
-                      <div className="text-emerald-300 font-bold border-b border-emerald-800 pb-1 flex justify-between items-center">
-                        <span>📚 تفاصيل نمط طباعة المواد ({files.length}):</span>
-                        <span className="text-[10px] text-emerald-200 font-mono">{totalPagesSum} صفحة ➔ {totalPrintedSheetsSum} ورقة</span>
+                      <div className="text-emerald-300 font-bold border-b border-emerald-800 pb-1.5 flex justify-between items-center">
+                        <span>📚 تفاصيل الشيتات ({files.length}):</span>
                       </div>
-                      <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                        {files.map((f, i) => {
-                          const pps = f.pagesPerSheet || 1;
-                          const sheetsPerCopy = Math.ceil(f.pageCount / pps);
-                          const physicalPapers = Math.ceil(sheetsPerCopy / (f.sides === 'double' ? 2 : 1));
-
-                          return (
-                            <div key={i} className="text-emerald-100 text-[11px] bg-emerald-900/90 p-2 rounded-lg border border-emerald-700/70 space-y-1">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-white truncate max-w-[190px]">
-                                  {i + 1}. {f.fileName}
-                                </span>
-                                <span className="text-amber-300 font-mono text-[11px] font-bold shrink-0">
-                                  {formatSDG(f.calculatedPrice)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-medium text-emerald-200">
-                                <span className="bg-emerald-800 px-1.5 py-0.5 rounded text-white font-bold">
-                                  {pps === 2 ? '2:1 عادي' : pps === 4 ? '4:1 شائع ⭐' : pps === 8 ? '8:1 اسلايت' : `${pps} في 1`}
-                                </span>
-                                <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">
-                                  وجهين 🔄
-                                </span>
-                                <span className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded font-black font-mono">
-                                  {physicalPapers * f.copies} ورقة مطبوعة
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                        {files.map((f, i) => (
+                          <div key={i} className="text-emerald-100 text-xs bg-emerald-900/90 p-2.5 rounded-lg border border-emerald-700/70 flex justify-between items-center gap-2">
+                            <span className="font-bold text-white truncate flex-1">
+                              {i + 1}. {f.fileName}
+                            </span>
+                            <span className="text-amber-300 font-mono text-xs font-black shrink-0">
+                              {formatSDG(f.calculatedPrice)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
 
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>عدد الملفات:</span>
-                    <strong className="text-white">{files.length} ملف</strong>
+                    <span>عدد الشيتات:</span>
+                    <strong className="text-white">{files.length} شيت</strong>
                   </div>
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>إجمالي صفحات المستندات الأصلية:</span>
-                    <strong className="text-white">{totalPagesSum} صفحة</strong>
-                  </div>
-                  <div className="flex justify-between text-amber-300 font-bold bg-emerald-950/70 p-2.5 rounded-xl border border-emerald-700/80 my-1">
-                    <span>عدد الورق المطبوع فعلياً (بعد التقسيم):</span>
-                    <strong className="text-amber-300 text-sm">{totalPrintedSheetsSum} ورقة 🖨️</strong>
-                  </div>
-                  <div className="flex justify-between text-emerald-100/90">
-                    <span>قيمة طباعة المستندات:</span>
+                    <span>قيمة الشيتات:</span>
                     <strong className="text-white">{formatSDG(subtotalSum)}</strong>
                   </div>
                   <div className="flex justify-between text-emerald-100/90">
-                    <span>رسوم التوصيل ({city}):</span>
-                    <strong className="text-white">{formatSDG(deliveryFee)}</strong>
+                    <span>رسوم التوصيل {city ? `(${city.length > 30 ? city.slice(0, 30) + '...' : city})` : ''}:</span>
+                    <strong className="text-white">
+                      {deliveryMethod === 'pickup' 
+                        ? 'مجاناً (استلام شخصي)' 
+                        : city ? formatSDG(deliveryFee) : 'اختر العنوان للتحديد'}
+                    </strong>
                   </div>
 
                   {/* Coupon Box */}
@@ -1813,6 +1864,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
           <div className="w-full max-w-3xl my-8">
             <DeliveryRatesGuide
               isOpen={true}
+              zones={deliveryZones}
               onClose={() => setShowDeliveryGuideModal(false)}
               onSelectZone={(selectedZoneText) => {
                 setCity(selectedZoneText);

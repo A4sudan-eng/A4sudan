@@ -3,13 +3,14 @@ import {
   Search, Printer, BookOpen, GraduationCap, Plus, Filter, Building2, 
   Sparkles, Layers, CheckSquare, Square, Check, ChevronLeft, ArrowRight, 
   UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft,
-  X, MessageCircle, FileUp, AlertCircle, FileQuestion, FileX
+  X, MessageCircle, FileUp, AlertCircle, FileQuestion, FileX, Lock, EyeOff
 } from 'lucide-react';
 import { StudySheet, PrintFileOptions } from '../types';
 import { SAMPLE_STUDY_SHEETS } from '../data/initialData';
 import { formatSDG } from '../utils/pricing';
 import neelainLogo from '../assets/images/neelain_exact_logo_1785951359550.jpg';
-import { NEELAIN_COLLEGES, ACADEMIC_LEVELS, getStoredUniversities } from '../data/neelainData';
+import { NEELAIN_COLLEGES, ACADEMIC_LEVELS, getStoredUniversities, UniversityInfo, getStoredAcademicLevels, AcademicLevel, getStoredDegreeTracks, DegreeTrackInfo } from '../data/neelainData';
+import { getUniversitiesFromCloud, subscribeToCloudUniversities, getAcademicLevelsFromCloud, subscribeToCloudAcademicLevels, getDegreeTracksFromCloud, subscribeToCloudDegreeTracks } from '../lib/firebase';
 
 interface SheetsHubProps {
   sheets: StudySheet[];
@@ -24,17 +25,191 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
 
   // Dynamic Universities list from localStorage / defaults
-  const [sudanUnis, setSudanUnis] = useState(() => getStoredUniversities());
+  const [sudanUnis, setSudanUnis] = useState<UniversityInfo[]>(() => getStoredUniversities());
+  // Dynamic Academic Levels & Semesters from localStorage / defaults
+  const [academicLevels, setAcademicLevels] = useState<AcademicLevel[]>(() => getStoredAcademicLevels());
+  // Dynamic Degree Tracks (Bachelor / Diploma) from localStorage / defaults
+  const [degreeTracks, setDegreeTracks] = useState<DegreeTrackInfo[]>(() => getStoredDegreeTracks());
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setSudanUnis(getStoredUniversities());
+    // 1. Initial fetch from Cloud Firestore & Server API
+    getUniversitiesFromCloud().then(cloudUnis => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUnis(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      } else {
+        fetch('/api/universities')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setSudanUnis(data);
+              try {
+                localStorage.setItem('a4_universities_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Academic Levels
+    getAcademicLevelsFromCloud().then(cloudLevels => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevels(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      } else {
+        fetch('/api/academic-levels')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setAcademicLevels(data);
+              try {
+                localStorage.setItem('a4_academic_levels_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Degree Tracks
+    getDegreeTracksFromCloud().then(cloudTracks => {
+      if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+        setDegreeTracks(cloudTracks);
+        try {
+          localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+        } catch (e) {}
+      } else {
+        fetch('/api/degree-tracks')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setDegreeTracks(data);
+              try {
+                localStorage.setItem('a4_degree_tracks_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // 2. Real-time Firestore subscription (Cross-device and cross-browser)
+    const unsubscribeCloud = subscribeToCloudUniversities((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUnis(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudLevels = subscribeToCloudAcademicLevels((cloudLevels) => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevels(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudTracks = subscribeToCloudDegreeTracks((cloudTracks) => {
+      if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+        setDegreeTracks(cloudTracks);
+        try {
+          localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+        } catch (e) {}
+      }
+    });
+
+    // 3. Local custom event & storage event listener
+    const handleUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setSudanUnis(e.detail);
+      } else {
+        setSudanUnis(getStoredUniversities());
+      }
     };
     window.addEventListener('a4_universities_updated', handleUpdate);
+
+    const handleLevelsUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setAcademicLevels(e.detail);
+      } else {
+        setAcademicLevels(getStoredAcademicLevels());
+      }
+    };
+    window.addEventListener('a4_academic_levels_updated', handleLevelsUpdate);
+
+    const handleTracksUpdate = (e?: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setDegreeTracks(e.detail);
+      } else {
+        setDegreeTracks(getStoredDegreeTracks());
+      }
+    };
+    window.addEventListener('a4_degree_tracks_updated', handleTracksUpdate);
+
     window.addEventListener('storage', handleUpdate);
+    window.addEventListener('storage', handleLevelsUpdate);
+    window.addEventListener('storage', handleTracksUpdate);
+
+    // 4. Cross-tab BroadcastChannel listener
+    let bc: BroadcastChannel | null = null;
+    let levelsBc: BroadcastChannel | null = null;
+    let tracksBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('a4_universities_channel');
+        bc.onmessage = (ev) => {
+          if (ev?.data?.type === 'UNIVERSITIES_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setSudanUnis(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        levelsBc = new BroadcastChannel('a4_academic_levels_channel');
+        levelsBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'ACADEMIC_LEVELS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setAcademicLevels(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        tracksBc = new BroadcastChannel('a4_degree_tracks_channel');
+        tracksBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'DEGREE_TRACKS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setDegreeTracks(ev.data.list);
+          }
+        };
+      } catch (e) {}
+    }
+
     return () => {
+      if (unsubscribeCloud) unsubscribeCloud();
+      if (unsubscribeCloudLevels) unsubscribeCloudLevels();
+      if (unsubscribeCloudTracks) unsubscribeCloudTracks();
       window.removeEventListener('a4_universities_updated', handleUpdate);
+      window.removeEventListener('a4_academic_levels_updated', handleLevelsUpdate);
+      window.removeEventListener('a4_degree_tracks_updated', handleTracksUpdate);
       window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('storage', handleLevelsUpdate);
+      window.removeEventListener('storage', handleTracksUpdate);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (levelsBc) {
+        try { levelsBc.close(); } catch (e) {}
+      }
+      if (tracksBc) {
+        try { tracksBc.close(); } catch (e) {}
+      }
     };
   }, []);
 
@@ -78,10 +253,13 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const [newAuthor, setNewAuthor] = useState('');
   const [newDegreeType, setNewDegreeType] = useState<'bachelor' | 'diploma'>('bachelor');
 
+  // Temporary notice when trying to access disabled level or semester
+  const [inactiveNotice, setInactiveNotice] = useState<string | null>(null);
+
   // Helper to get semester display title
   const getSemesterLabel = (semNum: number | null) => {
     if (!semNum) return 'جميع الفصول الدراسية';
-    for (const level of ACADEMIC_LEVELS) {
+    for (const level of academicLevels) {
       const sem = level.semesters.find(s => s.id === semNum);
       if (sem) {
         return `${sem.title} (${level.title})`;
@@ -645,6 +823,31 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
             </div>
           )}
 
+          {/* Temporary Notice Modal/Banner when clicking an inactive Level/Semester */}
+          {inactiveNotice && (
+            <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border-2 border-rose-500 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between gap-3 animate-in fade-in zoom-in-95">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-900/80 border border-rose-500/50 flex items-center justify-center text-rose-300 shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-rose-300 flex items-center gap-1.5">
+                    <span>تنبيه: محتوى غير متاح مؤقتاً</span>
+                  </h4>
+                  <p className="text-xs text-rose-100 font-medium mt-0.5">
+                    {inactiveNotice}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setInactiveNotice(null)}
+                className="px-3 py-1.5 bg-rose-800 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          )}
+
           {/* STEP 5: ACADEMIC LEVELS (المستويات) */}
           {leaderStep === 'levels' && (
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
@@ -671,41 +874,69 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {ACADEMIC_LEVELS
+                {academicLevels
                   .filter(lvl => selectedDegreeTrack === 'diploma' ? lvl.levelNum <= 2 : lvl.levelNum <= (currentCollegeObj?.levelsCount || 4))
-                  .map((lvl) => (
-                    <div
-                      key={lvl.levelNum}
-                      onClick={() => {
-                        setSelectedLevelNum(lvl.levelNum);
-                        setLeaderStep('semesters');
-                      }}
-                      className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600/80 hover:border-amber-400 rounded-xl p-3.5 transition-all cursor-pointer group shadow-xs flex flex-col justify-between space-y-2.5"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="bg-amber-400 text-slate-950 font-extrabold text-[11px] px-2 py-0.5 rounded-md shadow-xs">
-                            {lvl.badge}
-                          </span>
-                          <span className="text-[10px] text-emerald-300 font-bold">
-                            {lvl.yearLabel}
-                          </span>
+                  .map((lvl) => {
+                    const isLvlActive = lvl.active !== false;
+                    return (
+                      <div
+                        key={lvl.levelNum}
+                        onClick={() => {
+                          if (!isLvlActive) {
+                            setInactiveNotice(`⚠️ هذا المستوى الدراسي (${lvl.title}) مغلق وموقوف حالياً من قِبل إدارة المنصة ولا يمكن للطلاب الدخول إليه.`);
+                            return;
+                          }
+                          setSelectedLevelNum(lvl.levelNum);
+                          setLeaderStep('semesters');
+                        }}
+                        className={`rounded-xl p-3.5 transition-all shadow-xs flex flex-col justify-between space-y-2.5 relative overflow-hidden ${
+                          isLvlActive
+                            ? 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600/80 hover:border-amber-400 cursor-pointer group'
+                            : 'bg-slate-900/90 text-slate-300 border-2 border-dashed border-rose-500/60 opacity-75 cursor-not-allowed group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-md shadow-xs ${
+                              isLvlActive ? 'bg-amber-400 text-slate-950' : 'bg-rose-950 text-rose-300 border border-rose-500/50'
+                            }`}>
+                              {isLvlActive ? lvl.badge : `${lvl.badge} (مغلق)`}
+                            </span>
+                            {isLvlActive ? (
+                              <span className="text-[10px] text-emerald-300 font-bold">
+                                {lvl.yearLabel}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-black bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                <Lock className="w-3 h-3" />
+                                <span>غير متاح الآن ⏸️</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base font-black transition-colors ${
+                            isLvlActive ? 'text-white group-hover:text-amber-300' : 'text-slate-300'
+                          }`}>
+                            {lvl.title}
+                          </h3>
+                          <p className={`text-[11px] leading-tight ${
+                            isLvlActive ? 'text-emerald-100/85' : 'text-slate-400'
+                          }`}>
+                            {lvl.description}
+                          </p>
                         </div>
 
-                        <h3 className="text-base font-black text-white group-hover:text-amber-300 transition-colors">
-                          {lvl.title}
-                        </h3>
-                        <p className="text-[11px] text-emerald-100/85 leading-tight">
-                          {lvl.description}
-                        </p>
+                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] font-bold ${
+                          isLvlActive
+                            ? 'border-emerald-800/80 text-amber-300 group-hover:translate-x-[-2px] transition-transform'
+                            : 'border-slate-800 text-rose-400'
+                        }`}>
+                          <span>{isLvlActive ? 'عرض الفصول الدراسية' : 'المستوى موقوف حالياً'}</span>
+                          {isLvlActive ? <ArrowLeft className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        </div>
                       </div>
-
-                      <div className="pt-2 border-t border-emerald-800/80 flex items-center justify-between text-[11px] font-bold text-amber-300 group-hover:translate-x-[-2px] transition-transform">
-                        <span>عرض الفصول الدراسية</span>
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                      </div>
-                    </div>
-                ))}
+                    );
+                })}
               </div>
             </div>
           )}
@@ -725,7 +956,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                     <h2 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
                       <BookOpen className="w-5 h-5 text-emerald-600" />
                       <span>
-                        فصول {ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`} ({selectedCollege} - {selectedLeaderDept})
+                        فصول {academicLevels.find(l => l.levelNum === selectedLevelNum)?.title || `المستوى ${selectedLevelNum}`} ({selectedCollege} - {selectedLeaderDept})
                       </span>
                     </h2>
                     <p className="text-xs text-slate-500">
@@ -736,39 +967,75 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(ACADEMIC_LEVELS.find(l => l.levelNum === selectedLevelNum)?.semesters || []).map((sem) => (
-                  <div
-                    key={sem.id}
-                    onClick={() => {
-                      setSelectedSemesterNum(sem.id);
-                      setLeaderStep('semester_sheets');
-                    }}
-                    className="bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600 hover:border-amber-400 rounded-xl p-3.5 transition-all cursor-pointer group shadow-xs flex flex-col justify-between space-y-2"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="bg-amber-400 text-slate-950 font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs">
-                          {sem.label}
-                        </span>
-                        <span className="text-[11px] text-emerald-300 font-bold">
-                          قسم {selectedLeaderDept}
-                        </span>
+                {(() => {
+                  const currentLvl = academicLevels.find(l => l.levelNum === selectedLevelNum);
+                  const isParentLevelActive = currentLvl?.active !== false;
+                  return (currentLvl?.semesters || []).map((sem) => {
+                    const isSemActive = isParentLevelActive && sem.active !== false;
+                    return (
+                      <div
+                        key={sem.id}
+                        onClick={() => {
+                          if (!isSemActive) {
+                            setInactiveNotice(`⚠️ هذا الفصل الدراسي (${sem.title}) مغلق وموقوف حالياً من قِبل إدارة المنصة ولا يمكن للطلاب الدخول إليه.`);
+                            return;
+                          }
+                          setSelectedSemesterNum(sem.id);
+                          setLeaderStep('semester_sheets');
+                        }}
+                        className={`rounded-xl p-3.5 transition-all shadow-xs flex flex-col justify-between space-y-2 relative overflow-hidden ${
+                          isSemActive
+                            ? 'bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-900 text-white border border-emerald-600 hover:border-amber-400 cursor-pointer group'
+                            : 'bg-slate-900/90 text-slate-300 border-2 border-dashed border-rose-500/60 opacity-75 cursor-not-allowed group'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className={`font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs ${
+                              isSemActive ? 'bg-amber-400 text-slate-950' : 'bg-rose-950 text-rose-300 border border-rose-500/50'
+                            }`}>
+                              {isSemActive ? sem.label : `${sem.label} (مغلق)`}
+                            </span>
+                            {isSemActive ? (
+                              <span className="text-[11px] text-emerald-300 font-bold">
+                                قسم {selectedLeaderDept}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-black bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/30">
+                                <Lock className="w-3 h-3" />
+                                <span>غير متاح الآن ⏸️</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className={`text-base sm:text-lg font-black transition-colors ${
+                            isSemActive ? 'text-white group-hover:text-amber-300' : 'text-slate-300'
+                          }`}>
+                            {sem.title}
+                          </h3>
+                          <p className={`text-[11px] leading-tight ${
+                            isSemActive ? 'text-emerald-100/90' : 'text-slate-400'
+                          }`}>
+                            {sem.desc}
+                          </p>
+                        </div>
+
+                        <div className={`pt-2 border-t flex items-center justify-between text-[11px] font-bold ${
+                          isSemActive
+                            ? 'border-emerald-800/80 text-amber-300'
+                            : 'border-slate-800 text-rose-400'
+                        }`}>
+                          <span>{isSemActive ? 'عرض المواد والشيتات' : 'الفصل الدراسي موقوف حالياً'}</span>
+                          {isSemActive ? (
+                            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                          ) : (
+                            <Lock className="w-3.5 h-3.5" />
+                          )}
+                        </div>
                       </div>
-
-                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-amber-300 transition-colors">
-                        {sem.title}
-                      </h3>
-                      <p className="text-[11px] text-emerald-100/90 leading-tight">
-                        {sem.desc}
-                      </p>
-                    </div>
-
-                    <div className="pt-2 border-t border-emerald-800/80 flex items-center justify-between text-[11px] font-bold text-amber-300">
-                      <span>عرض المواد والشيتات</span>
-                      <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
-                    </div>
-                  </div>
-                ))}
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

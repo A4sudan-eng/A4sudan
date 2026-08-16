@@ -9,7 +9,7 @@ import { ApkDownloadModal } from './components/ApkDownloadModal';
 import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon } from './types';
-import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS } from './data/initialData';
+import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS, getStoredDeletedIds, saveStoredDeletedId, getStoredDeletedSheetIds, saveStoredDeletedSheetId, removeStoredDeletedSheetId } from './data/initialData';
 import { 
   saveOrderToCloud, 
   updateOrderInCloud, 
@@ -21,8 +21,21 @@ import {
   saveSheetToCloud,
   deleteSheetFromCloud,
   getSheetsFromCloud,
-  subscribeToCloudSheets
+  subscribeToCloudSheets,
+  getDeletedIdsFromCloud,
+  recordDeletedOrderIdInCloud,
+  recordDeletedSheetIdInCloud,
+  getDeletedSheetIdsFromCloud,
+  batchSaveSheetsToCloud,
+  getUniversitiesFromCloud,
+  subscribeToCloudUniversities,
+  saveUniversitiesToCloud,
+  getAcademicLevelsFromCloud,
+  subscribeToCloudAcademicLevels,
+  saveAcademicLevelsToCloud
 } from './lib/firebase';
+import { getStoredUniversities, saveStoredUniversities, getStoredAcademicLevels, saveStoredAcademicLevels } from './data/neelainData';
+import { recordVisit } from './utils/analyticsTracker';
 import { User } from 'firebase/auth';
 
 export default function App() {
@@ -88,13 +101,45 @@ export default function App() {
     };
   }, []);
 
+  // Record visitor analytics on page navigation
+  useEffect(() => {
+    recordVisit({ path: currentView });
+  }, [currentView]);
+
+  // Deleted IDs Tombstone Set (Synchronized across Cloud Firestore, server and all browser tabs)
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(() => {
+    return new Set(getStoredDeletedIds().map(id => id.toLowerCase()));
+  });
+
   // Fetch initial pricing & initialize orders from Cloud Firestore, localStorage and backend
   const fetchOrders = async () => {
     try {
+      // 1. Fetch current deleted IDs from cloud & server to guarantee synchronization
+      const [cloudDeletedIdsRes, serverDeletedIdsRes] = await Promise.allSettled([
+        getDeletedIdsFromCloud(),
+        fetch('/api/deleted-ids').then(res => res.ok ? res.json() : [])
+      ]);
+
+      const cloudDeletedIds: string[] = cloudDeletedIdsRes.status === 'fulfilled' && Array.isArray(cloudDeletedIdsRes.value) ? cloudDeletedIdsRes.value : [];
+      const serverDeletedIds: string[] = serverDeletedIdsRes.status === 'fulfilled' && Array.isArray(serverDeletedIdsRes.value) ? serverDeletedIdsRes.value : [];
+      
+      const combinedDeleted = new Set<string>([
+        ...getStoredDeletedIds().map(id => id.toLowerCase()),
+        ...cloudDeletedIds.map(id => id.toLowerCase()),
+        ...serverDeletedIds.map(id => id.toLowerCase()),
+      ]);
+
+      setDeletedIds(combinedDeleted);
+
       let localOrders: PrintOrder[] = [];
       try {
         const raw = localStorage.getItem('a4_orders');
-        if (raw) localOrders = JSON.parse(raw);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            localOrders = parsed.filter(o => o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt);
+          }
+        }
       } catch (e) {}
 
       // Fetch from Cloud Firestore and backend API simultaneously in parallel
@@ -103,10 +148,13 @@ export default function App() {
         fetch('/api/orders').then(res => res.ok ? res.json() : [])
       ]);
 
-      const cloudOrders: PrintOrder[] = cloudRes.status === 'fulfilled' && Array.isArray(cloudRes.value) ? cloudRes.value : [];
-      const serverOrders: PrintOrder[] = serverRes.status === 'fulfilled' && Array.isArray(serverRes.value) ? serverRes.value : [];
+      const rawCloudOrders: PrintOrder[] = cloudRes.status === 'fulfilled' && Array.isArray(cloudRes.value) ? cloudRes.value : [];
+      const rawServerOrders: PrintOrder[] = serverRes.status === 'fulfilled' && Array.isArray(serverRes.value) ? serverRes.value : [];
 
-      // Sync local orders batch to server if available
+      const cloudOrders = rawCloudOrders.filter(o => o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt);
+      const serverOrders = rawServerOrders.filter(o => o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt);
+
+      // Sync local active orders batch to server if available
       if (localOrders.length > 0) {
         fetch('/api/orders/batch-sync', {
           method: 'POST',
@@ -118,17 +166,22 @@ export default function App() {
       setOrders(prev => {
         const map = new Map<string, PrintOrder>();
 
-        // 1. Populate from prev React state
-        prev.forEach((o: PrintOrder) => { if (o && o.id) map.set(o.id, o); });
+        // 1. Populate from prev React state (filtering deleted)
+        prev.forEach((o: PrintOrder) => { 
+          if (o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+            map.set(o.id.toLowerCase(), o); 
+          }
+        });
 
         // 2. Populate/merge from localOrders
         localOrders.forEach((o: PrintOrder) => {
-          if (o && o.id) {
-            const existing = map.get(o.id);
+          if (o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+            const key = o.id.toLowerCase();
+            const existing = map.get(key);
             if (!existing) {
-              map.set(o.id, o);
+              map.set(key, o);
             } else {
-              map.set(o.id, {
+              map.set(key, {
                 ...existing,
                 ...o,
                 files: (o.files && o.files.length > 0) ? o.files : existing.files,
@@ -137,14 +190,15 @@ export default function App() {
           }
         });
 
-        // 3. Populate/merge from serverOrders (Cross-device Server Source of Truth)
+        // 3. Populate/merge from serverOrders
         serverOrders.forEach((o: PrintOrder) => {
-          if (o && o.id) {
-            const existing = map.get(o.id);
+          if (o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+            const key = o.id.toLowerCase();
+            const existing = map.get(key);
             if (!existing) {
-              map.set(o.id, o);
+              map.set(key, o);
             } else {
-              map.set(o.id, {
+              map.set(key, {
                 ...existing,
                 ...o,
                 files: (o.files && o.files.length > 0) ? o.files : existing.files,
@@ -156,12 +210,13 @@ export default function App() {
 
         // 4. Merge Cloud Firestore orders (HIGHEST PRIORITY SOURCE OF TRUTH)
         cloudOrders.forEach((o: PrintOrder) => {
-          if (o && o.id) {
-            const existing = map.get(o.id);
+          if (o && o.id && !combinedDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+            const key = o.id.toLowerCase();
+            const existing = map.get(key);
             if (!existing) {
-              map.set(o.id, o);
+              map.set(key, o);
             } else {
-              map.set(o.id, {
+              map.set(key, {
                 ...existing,
                 ...o,
                 files: (o.files && o.files.length > 0) ? o.files : existing.files,
@@ -194,32 +249,59 @@ export default function App() {
         if (raw) localSheets = JSON.parse(raw);
       } catch (e) {}
 
-      // Fetch simultaneously from Cloud Firestore and Backend API
-      const [cloudRes, serverRes] = await Promise.allSettled([
+      // Fetch simultaneously from Cloud Firestore, Backend API, and Cloud Deleted Sheet IDs
+      const [cloudRes, serverRes, cloudDeletedRes] = await Promise.allSettled([
         getSheetsFromCloud(),
-        fetch('/api/sheets').then(res => res.ok ? res.json() : [])
+        fetch('/api/sheets').then(res => res.ok ? res.json() : []),
+        getDeletedSheetIdsFromCloud()
       ]);
 
       const cloudSheets: StudySheet[] = cloudRes.status === 'fulfilled' && Array.isArray(cloudRes.value) ? cloudRes.value : [];
       const serverSheets: StudySheet[] = serverRes.status === 'fulfilled' && Array.isArray(serverRes.value) ? serverRes.value : [];
+      const cloudDeletedIds: string[] = cloudDeletedRes.status === 'fulfilled' && Array.isArray(cloudDeletedRes.value) ? cloudDeletedRes.value : [];
+
+      const currentDeletedSheets = new Set<string>([
+        ...getStoredDeletedSheetIds().map(id => id.toLowerCase()),
+        ...cloudDeletedIds.map(id => id.toLowerCase())
+      ]);
 
       setSheets(prev => {
         const map = new Map<string, StudySheet>();
 
-        // 1. Populate from SAMPLE_STUDY_SHEETS
-        SAMPLE_STUDY_SHEETS.forEach(s => { if (s && s.id) map.set(s.id, s); });
+        // 1. Populate from SAMPLE_STUDY_SHEETS (only non-deleted)
+        SAMPLE_STUDY_SHEETS.forEach(s => { 
+          if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
+            map.set(s.id.toLowerCase(), s); 
+          }
+        });
 
         // 2. Populate/merge from prev state
-        prev.forEach(s => { if (s && s.id) map.set(s.id, s); });
+        prev.forEach(s => { 
+          if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
+            map.set(s.id.toLowerCase(), s); 
+          }
+        });
 
         // 3. Populate/merge from localSheets
-        localSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+        localSheets.forEach(s => { 
+          if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
+            map.set(s.id.toLowerCase(), s); 
+          }
+        });
 
         // 4. Populate/merge from serverSheets
-        serverSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+        serverSheets.forEach(s => { 
+          if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
+            map.set(s.id.toLowerCase(), s); 
+          }
+        });
 
         // 5. Populate/merge from cloudSheets (Cloud Firestore - HIGHEST PRIORITY SOURCE OF TRUTH)
-        cloudSheets.forEach(s => { if (s && s.id) map.set(s.id, s); });
+        cloudSheets.forEach(s => { 
+          if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
+            map.set(s.id.toLowerCase(), s); 
+          }
+        });
 
         const merged = Array.from(map.values());
         try {
@@ -296,25 +378,29 @@ export default function App() {
     const unsubscribeCloudOrders = subscribeToCloudOrders((cloudOrders) => {
       if (Array.isArray(cloudOrders)) {
         setOrders(prev => {
+          const currentDeleted = new Set<string>([
+            ...getStoredDeletedIds().map(id => id.toLowerCase()),
+          ]);
+
           const map = new Map<string, PrintOrder>();
-          // 1. Keep current state
-          prev.forEach(o => { if (o && o.id) map.set(o.id, o); });
-          // 2. Overwrite/merge with Firestore cloud orders
+          
+          // Populate from cloudOrders (authoritative source) excluding deleted
           cloudOrders.forEach(o => {
-            if (o && o.id) {
-              const existing = map.get(o.id);
-              if (!existing) {
-                map.set(o.id, o);
-              } else {
-                map.set(o.id, {
-                  ...existing,
-                  ...o,
-                  files: (o.files && o.files.length > 0) ? o.files : existing.files,
-                  bankakProofUrl: o.bankakProofUrl || existing.bankakProofUrl,
-                });
+            if (o && o.id && !currentDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+              map.set(o.id.toLowerCase(), o);
+            }
+          });
+
+          // Also retain any pure local unsynced pending orders that are NOT deleted
+          prev.forEach(o => {
+            if (o && o.id && !currentDeleted.has(o.id.toLowerCase()) && !o.deletedAt) {
+              const key = o.id.toLowerCase();
+              if (!map.has(key)) {
+                map.set(key, o);
               }
             }
           });
+
           const merged = Array.from(map.values());
           merged.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           try {
@@ -327,13 +413,178 @@ export default function App() {
 
     // Subscribe to real-time study sheets from Firebase Firestore
     const unsubscribeCloudSheets = subscribeToCloudSheets((cloudSheets) => {
-      if (Array.isArray(cloudSheets) && cloudSheets.length > 0) {
-        setSheets(cloudSheets);
+      if (Array.isArray(cloudSheets)) {
+        const currentDeleted = new Set<string>([
+          ...getStoredDeletedSheetIds().map(id => id.toLowerCase()),
+        ]);
+        const validSheets = cloudSheets.filter(s => s && s.id && !currentDeleted.has(s.id.toLowerCase()));
+        if (validSheets.length > 0) {
+          setSheets(validSheets);
+          try {
+            localStorage.setItem('a4_sheets', JSON.stringify(validSheets));
+          } catch (e) {}
+        }
+      }
+    });
+
+    // Listen for broadcast changes across browser tabs
+    let sheetsBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        sheetsBc = new BroadcastChannel('a4_sheets_channel');
+        sheetsBc.onmessage = (event) => {
+          if (event.data?.type === 'SHEETS_BATCH_SAVED' || event.data?.type === 'SHEET_SAVED' || event.data?.type === 'SHEET_DELETED') {
+            try {
+              const raw = localStorage.getItem('a4_sheets');
+              if (raw) setSheets(JSON.parse(raw));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
+    }
+
+    // Fetch and sync Universities & Colleges across all devices
+    getUniversitiesFromCloud().then((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
         try {
-          localStorage.setItem('a4_sheets', JSON.stringify(cloudSheets));
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+          window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: cloudUnis }));
+        } catch (e) {}
+      } else {
+        // Fetch from backend API
+        fetch('/api/universities')
+          .then(res => res.ok ? res.json() : null)
+          .then(serverUnis => {
+            if (serverUnis && Array.isArray(serverUnis) && serverUnis.length > 0) {
+              try {
+                localStorage.setItem('a4_universities_data', JSON.stringify(serverUnis));
+                window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: serverUnis }));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Fetch and sync Academic Levels & Semesters across all devices
+    getAcademicLevelsFromCloud().then((cloudLevels) => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+          window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: cloudLevels }));
+        } catch (e) {}
+      } else {
+        fetch('/api/academic-levels')
+          .then(res => res.ok ? res.json() : null)
+          .then(serverLevels => {
+            if (serverLevels && Array.isArray(serverLevels) && serverLevels.length > 0) {
+              try {
+                localStorage.setItem('a4_academic_levels_data', JSON.stringify(serverLevels));
+                window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: serverLevels }));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Subscribe to real-time universities updates from Firebase Firestore
+    const unsubscribeCloudUnis = subscribeToCloudUniversities((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+          window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: cloudUnis }));
         } catch (e) {}
       }
     });
+
+    // Subscribe to real-time academic levels updates from Firebase Firestore
+    const unsubscribeCloudLevels = subscribeToCloudAcademicLevels((cloudLevels) => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+          window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: cloudLevels }));
+        } catch (e) {}
+      }
+    });
+
+    // Subscribe to real-time degree tracks updates from Firebase Firestore
+    const unsubscribeCloudDegreeTracks = (typeof subscribeToCloudDegreeTracks === 'function')
+      ? subscribeToCloudDegreeTracks((cloudTracks) => {
+          if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+            try {
+              localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+              window.dispatchEvent(new CustomEvent('a4_degree_tracks_updated', { detail: cloudTracks }));
+            } catch (e) {}
+          }
+        })
+      : null;
+
+    // BroadcastChannel listener for instant cross-tab order deletion and creation
+    let broadcastChannel: BroadcastChannel | null = null;
+    let universitiesBroadcastChannel: BroadcastChannel | null = null;
+    let academicLevelsBroadcastChannel: BroadcastChannel | null = null;
+    let degreeTracksBroadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        broadcastChannel = new BroadcastChannel('a4_orders_channel');
+        broadcastChannel.onmessage = (event) => {
+          if (event && event.data) {
+            const { type, orderId } = event.data;
+            if ((type === 'ORDER_DELETED' || type === 'ORDER_MOVED_TO_TRASH' || type === 'ORDER_PERMANENTLY_DELETED') && orderId) {
+              const lowerId = String(orderId).toLowerCase();
+              setDeletedIds(prev => new Set([...prev, lowerId]));
+              saveStoredDeletedId(orderId);
+              setOrders(prev => {
+                const updated = prev.filter(o => o.id.toLowerCase() !== lowerId);
+                try {
+                  localStorage.setItem('a4_orders', JSON.stringify(updated));
+                } catch (e) {}
+                return updated;
+              });
+            } else if (type === 'ORDER_SAVED' || type === 'ORDER_RESTORED') {
+              fetchOrders();
+            }
+          }
+        };
+      } catch (e) {}
+
+      try {
+        universitiesBroadcastChannel = new BroadcastChannel('a4_universities_channel');
+        universitiesBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'UNIVERSITIES_UPDATED' && Array.isArray(event?.data?.list)) {
+            try {
+              localStorage.setItem('a4_universities_data', JSON.stringify(event.data.list));
+              window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: event.data.list }));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
+
+      try {
+        academicLevelsBroadcastChannel = new BroadcastChannel('a4_academic_levels_channel');
+        academicLevelsBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'ACADEMIC_LEVELS_UPDATED' && Array.isArray(event?.data?.list)) {
+            try {
+              localStorage.setItem('a4_academic_levels_data', JSON.stringify(event.data.list));
+              window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: event.data.list }));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
+
+      try {
+        degreeTracksBroadcastChannel = new BroadcastChannel('a4_degree_tracks_channel');
+        degreeTracksBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'DEGREE_TRACKS_UPDATED' && Array.isArray(event?.data?.list)) {
+            try {
+              localStorage.setItem('a4_degree_tracks_data', JSON.stringify(event.data.list));
+              window.dispatchEvent(new CustomEvent('a4_degree_tracks_updated', { detail: event.data.list }));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
+    }
 
     // Auto-open APK download modal if link includes ?download_apk=true or ?apk=1 or hash #download-apk
     if (
@@ -347,6 +598,21 @@ export default function App() {
     return () => {
       if (unsubscribeCloudOrders) unsubscribeCloudOrders();
       if (unsubscribeCloudSheets) unsubscribeCloudSheets();
+      if (unsubscribeCloudUnis) unsubscribeCloudUnis();
+      if (unsubscribeCloudLevels) unsubscribeCloudLevels();
+      if (unsubscribeCloudDegreeTracks) unsubscribeCloudDegreeTracks();
+      if (broadcastChannel) {
+        try { broadcastChannel.close(); } catch (e) {}
+      }
+      if (universitiesBroadcastChannel) {
+        try { universitiesBroadcastChannel.close(); } catch (e) {}
+      }
+      if (academicLevelsBroadcastChannel) {
+        try { academicLevelsBroadcastChannel.close(); } catch (e) {}
+      }
+      if (degreeTracksBroadcastChannel) {
+        try { degreeTracksBroadcastChannel.close(); } catch (e) {}
+      }
     };
   }, []);
 
@@ -433,21 +699,39 @@ export default function App() {
   };
 
   const handleDeleteOrder = (orderId: string) => {
+    if (!orderId) return;
+    const lowerId = orderId.toLowerCase();
+    
+    // 1. Update local deleted IDs tombstone set
+    setDeletedIds(prev => new Set([...prev, lowerId]));
+    saveStoredDeletedId(orderId);
+
+    // 2. Remove immediately from orders state and localStorage
     setOrders(prev => {
-      const updated = prev.filter(o => o.id !== orderId);
+      const updated = prev.filter(o => o.id.toLowerCase() !== lowerId);
       try {
         localStorage.setItem('a4_orders', JSON.stringify(updated));
       } catch (e) {}
       return updated;
     });
 
-    // Delete from Firebase Cloud Firestore
+    // 3. Delete from Firebase Cloud Firestore and record tombstone
     deleteOrderFromCloud(orderId).catch(() => {});
+    recordDeletedOrderIdInCloud(orderId).catch(() => {});
 
-    // Sync with backend API
+    // 4. Sync with backend API
     fetch(`/api/orders/${orderId}`, {
       method: 'DELETE',
     }).catch(() => {});
+
+    // 5. Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'ORDER_DELETED', orderId });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleUpdateRates = (newRates: PricingRates) => {
@@ -458,10 +742,12 @@ export default function App() {
   };
 
   const handleAddSheet = (newSheet: StudySheet) => {
+    removeStoredDeletedSheetId(newSheet.id);
+    let updatedList: StudySheet[] = [];
     setSheets(prev => {
-      const updated = [newSheet, ...prev.filter(s => s.id !== newSheet.id)];
-      try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      updatedList = [newSheet, ...prev.filter(s => s.id !== newSheet.id)];
+      try { localStorage.setItem('a4_sheets', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
 
     // Save to Firebase Cloud Firestore for instant cross-device client sync
@@ -473,13 +759,24 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSheet),
     }).catch(() => {});
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_sheets_channel');
+        bc.postMessage({ type: 'SHEET_SAVED', sheet: newSheet });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleUpdateSheet = (updatedSheet: StudySheet) => {
+    removeStoredDeletedSheetId(updatedSheet.id);
+    let updatedList: StudySheet[] = [];
     setSheets(prev => {
-      const updated = prev.map(s => s.id === updatedSheet.id ? updatedSheet : s);
-      try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      updatedList = prev.map(s => s.id === updatedSheet.id ? updatedSheet : s);
+      try { localStorage.setItem('a4_sheets', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
 
     // Save to Firebase Cloud Firestore for instant cross-device client sync
@@ -491,22 +788,71 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedSheet),
     }).catch(() => {});
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_sheets_channel');
+        bc.postMessage({ type: 'SHEET_SAVED', sheet: updatedSheet });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleDeleteSheet = (sheetId: string) => {
+    const lowerId = sheetId.toLowerCase();
+    saveStoredDeletedSheetId(lowerId);
+
+    let updatedList: StudySheet[] = [];
     setSheets(prev => {
-      const updated = prev.filter(s => s.id !== sheetId);
-      try { localStorage.setItem('a4_sheets', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      updatedList = prev.filter(s => s.id.toLowerCase() !== lowerId);
+      try { localStorage.setItem('a4_sheets', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
 
-    // Delete from Firebase Cloud Firestore
+    // Delete from Firebase Cloud Firestore and record tombstone
     deleteSheetFromCloud(sheetId).catch(() => {});
+    recordDeletedSheetIdInCloud(sheetId).catch(() => {});
 
     // Sync with backend API
     fetch(`/api/sheets/${sheetId}`, {
       method: 'DELETE',
     }).catch(() => {});
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_sheets_channel');
+        bc.postMessage({ type: 'SHEET_DELETED', sheetId });
+        bc.close();
+      } catch (e) {}
+    }
+  };
+
+  const handleBatchSaveSheets = (updatedSheets: StudySheet[]) => {
+    setSheets(updatedSheets);
+    try {
+      localStorage.setItem('a4_sheets', JSON.stringify(updatedSheets));
+    } catch (e) {}
+
+    // Batch save to Firebase Cloud Firestore
+    batchSaveSheetsToCloud(updatedSheets).catch(() => {});
+
+    // Batch sync with backend API
+    fetch('/api/sheets/batch-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheets: updatedSheets }),
+    }).catch(() => {});
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_sheets_channel');
+        bc.postMessage({ type: 'SHEETS_BATCH_SAVED', count: updatedSheets.length });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleAddCoupon = (newCoupon: Coupon) => {
@@ -637,6 +983,7 @@ export default function App() {
               onAddSheet={handleAddSheet}
               onUpdateSheet={handleUpdateSheet}
               onDeleteSheet={handleDeleteSheet}
+              onBatchSaveSheets={handleBatchSaveSheets}
               onAddCoupon={handleAddCoupon}
               onDeleteCoupon={handleDeleteCoupon}
               onToggleCouponStatus={handleToggleCouponStatus}

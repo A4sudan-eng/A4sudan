@@ -1,17 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, Package, DollarSign, Printer, CheckCircle2, 
   Clock, Edit3, Save, RefreshCw, Eye, FileText, Phone, MapPin, CreditCard, Filter,
   Lock, KeyRound, Search, Trash2, LogOut, AlertCircle, FileCheck, Camera, Image as ImageIcon, X, Download, FileSpreadsheet, ExternalLink,
   BookOpen, Plus, Layers, GraduationCap, Building2, Tag, TrendingUp, BarChart3, UserCheck, History, User, MessageCircle, FolderTree,
-  ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle, RotateCcw
+  ChevronDown, Library, Wallet, PieChart, Receipt, Coins, ArrowDownRight, ArrowUpRight, MinusCircle, Calculator, PlusCircle, RotateCcw,
+  Truck
 } from 'lucide-react';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
 import fawryLogo from '../assets/images/fawry_logo_1786006099638.jpg';
-import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog, Expense } from '../types';
+import { PrintOrder, PricingRates, OrderStatus, PrintColor, PrintSides, BindingType, StudySheet, Coupon, ActivityLog, Expense, DeliveryZone } from '../types';
 import { getStatusBadgeInfo, formatSDG, calculateFilePrice, getEstimatedDeliveryText } from '../utils/pricing';
-import { DEFAULT_PRICING_RATES, getStoredExpenses, saveStoredExpenses, getStoredDeletedOrders, saveStoredDeletedOrders, getStoredOrders, saveStoredOrders } from '../data/initialData';
+import { DEFAULT_PRICING_RATES, getStoredExpenses, saveStoredExpenses, getStoredDeletedOrders, saveStoredDeletedOrders, getStoredOrders, saveStoredOrders, saveStoredDeletedId, removeStoredDeletedId, getStoredDeletedIds } from '../data/initialData';
+import { 
+  saveDeletedOrderToCloud, 
+  deleteDeletedOrderFromCloud, 
+  emptyDeletedOrdersInCloud, 
+  restoreOrderInCloud, 
+  subscribeToCloudDeletedOrders, 
+  getDeletedOrdersFromCloud,
+  saveUniversitiesToCloud,
+  getUniversitiesFromCloud,
+  subscribeToCloudUniversities,
+  saveAcademicLevelsToCloud,
+  getAcademicLevelsFromCloud,
+  subscribeToCloudAcademicLevels,
+  saveDegreeTracksToCloud,
+  getDegreeTracksFromCloud,
+  subscribeToCloudDegreeTracks
+} from '../lib/firebase';
 import { 
   NEELAIN_COLLEGES, 
   SUDAN_UNIVERSITIES, 
@@ -19,9 +37,26 @@ import {
   UniversityCollege, 
   CollegeDepartment, 
   getStoredUniversities, 
-  saveStoredUniversities 
+  saveStoredUniversities,
+  ACADEMIC_LEVELS,
+  AcademicLevel,
+  AcademicSemester,
+  getStoredAcademicLevels,
+  saveStoredAcademicLevels,
+  DegreeTrackInfo,
+  DEFAULT_DEGREE_TRACKS,
+  getStoredDegreeTracks,
+  saveStoredDegreeTracks
 } from '../data/neelainData';
+import { 
+  getStoredDeliveryZones, 
+  saveStoredDeliveryZones, 
+  fetchServerDeliveryZones, 
+  DEFAULT_ENRICHED_DELIVERY_ZONES 
+} from '../utils/deliveryManager';
 import { OrderSlipModal } from './OrderSlipModal';
+import { AnalyticsDashboardView } from './AnalyticsDashboardView';
+import { DeliveryManagementView } from './DeliveryManagementView';
 
 interface AdminDashboardProps {
   orders: PrintOrder[];
@@ -34,6 +69,7 @@ interface AdminDashboardProps {
   onAddSheet: (sheet: StudySheet) => void;
   onUpdateSheet: (sheet: StudySheet) => void;
   onDeleteSheet: (id: string) => void;
+  onBatchSaveSheets?: (sheets: StudySheet[]) => void;
   onAddCoupon?: (coupon: Coupon) => void;
   onDeleteCoupon?: (id: string) => void;
   onToggleCouponStatus?: (id: string) => void;
@@ -51,6 +87,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddSheet,
   onUpdateSheet,
   onDeleteSheet,
+  onBatchSaveSheets,
   onAddCoupon,
   onDeleteCoupon,
   onToggleCouponStatus,
@@ -136,13 +173,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Dashboard Tab & Filter States
-  const [activeTab, setActiveTab] = useState<'orders' | 'financials' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs' | 'universities' | 'trash'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'financials' | 'pricing' | 'sheets_manage' | 'sheets' | 'coupons' | 'activity_logs' | 'universities' | 'trash' | 'analytics' | 'delivery'>('orders');
   const [financialSubTab, setFinancialSubTab] = useState<'sales' | 'expenses' | 'profit_loss'>('sales');
   const [showOrdersMenu, setShowOrdersMenu] = useState(false);
   const [showFinancialsMenu, setShowFinancialsMenu] = useState(false);
   const [showSheetsUniMenu, setShowSheetsUniMenu] = useState(false);
   const [showQuickOrdersModal, setShowQuickOrdersModal] = useState(false);
   const [quickSearchTerm, setQuickSearchTerm] = useState('');
+
+  // Delivery Zones state & realtime sync
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
+
+  useEffect(() => {
+    fetchServerDeliveryZones().then(zones => {
+      if (zones && zones.length > 0) {
+        setDeliveryZones(zones);
+      }
+    });
+
+    const handleDeliveryZonesUpdated = (e: any) => {
+      if (e.detail && Array.isArray(e.detail.zones)) {
+        setDeliveryZones(e.detail.zones);
+      } else {
+        setDeliveryZones(getStoredDeliveryZones());
+      }
+    };
+
+    window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+    return () => window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+  }, []);
 
   // Trash PIN protection state (PIN: 1212)
   const [isTrashUnlocked, setIsTrashUnlocked] = useState(false);
@@ -530,6 +589,201 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Universities Management State
   const [universitiesList, setUniversitiesList] = useState<UniversityInfo[]>(() => getStoredUniversities());
+  // Academic Levels & Semesters Management State
+  const [academicLevelsList, setAcademicLevelsList] = useState<AcademicLevel[]>(() => getStoredAcademicLevels());
+  // Degree Tracks Management State (Bachelor & Diploma)
+  const [degreeTracksList, setDegreeTracksList] = useState<DegreeTrackInfo[]>(() => getStoredDegreeTracks());
+  // Universities View Sub-Tab: 'universities' (الجامعات والكليات) or 'degree_tracks' (الدرجات العلمية) or 'levels_semesters' (المستويات والفصول)
+  const [uniSubSection, setUniSubSection] = useState<'universities' | 'degree_tracks' | 'levels_semesters'>('universities');
+
+  // Real-time synchronization of Universities, Degree Tracks, and Levels across all browsers & devices
+  useEffect(() => {
+    // 1. Fetch latest from Cloud Firestore and Server API on mount
+    getUniversitiesFromCloud().then(cloudUnis => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setUniversitiesList(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      } else {
+        // Fetch from backend API
+        fetch('/api/universities')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setUniversitiesList(data);
+              try {
+                localStorage.setItem('a4_universities_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Academic Levels
+    getAcademicLevelsFromCloud().then(cloudLevels => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevelsList(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      } else {
+        fetch('/api/academic-levels')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setAcademicLevelsList(data);
+              try {
+                localStorage.setItem('a4_academic_levels_data', JSON.stringify(data));
+              } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Initial fetch for Degree Tracks
+    if (typeof getDegreeTracksFromCloud === 'function') {
+      getDegreeTracksFromCloud().then(cloudTracks => {
+        if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+          setDegreeTracksList(cloudTracks);
+          try {
+            localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+          } catch (e) {}
+        } else {
+          fetch('/api/degree-tracks')
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data && Array.isArray(data) && data.length > 0) {
+                setDegreeTracksList(data);
+                try {
+                  localStorage.setItem('a4_degree_tracks_data', JSON.stringify(data));
+                } catch (e) {}
+              }
+            })
+            .catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    // 2. Subscribe to real-time Firestore changes (Global cross-device sync)
+    const unsubscribeCloudUnis = subscribeToCloudUniversities((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setUniversitiesList(cloudUnis);
+        try {
+          localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudLevels = subscribeToCloudAcademicLevels((cloudLevels) => {
+      if (cloudLevels && Array.isArray(cloudLevels) && cloudLevels.length > 0) {
+        setAcademicLevelsList(cloudLevels);
+        try {
+          localStorage.setItem('a4_academic_levels_data', JSON.stringify(cloudLevels));
+        } catch (e) {}
+      }
+    });
+
+    const unsubscribeCloudTracks = (typeof subscribeToCloudDegreeTracks === 'function')
+      ? subscribeToCloudDegreeTracks((cloudTracks) => {
+          if (cloudTracks && Array.isArray(cloudTracks) && cloudTracks.length > 0) {
+            setDegreeTracksList(cloudTracks);
+            try {
+              localStorage.setItem('a4_degree_tracks_data', JSON.stringify(cloudTracks));
+            } catch (e) {}
+          }
+        })
+      : null;
+
+    // 3. Local custom event & storage event listener
+    const handleLocalUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setUniversitiesList(e.detail);
+      } else {
+        setUniversitiesList(getStoredUniversities());
+      }
+    };
+    window.addEventListener('a4_universities_updated', handleLocalUpdate);
+
+    const handleLevelsLocalUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setAcademicLevelsList(e.detail);
+      } else {
+        setAcademicLevelsList(getStoredAcademicLevels());
+      }
+    };
+    window.addEventListener('a4_academic_levels_updated', handleLevelsLocalUpdate);
+
+    const handleTracksLocalUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setDegreeTracksList(e.detail);
+      } else {
+        setDegreeTracksList(getStoredDegreeTracks());
+      }
+    };
+    window.addEventListener('a4_degree_tracks_updated', handleTracksLocalUpdate);
+
+    window.addEventListener('storage', handleLocalUpdate);
+    window.addEventListener('storage', handleLevelsLocalUpdate);
+    window.addEventListener('storage', handleTracksLocalUpdate);
+
+    // 4. Cross-tab BroadcastChannel listener
+    let bc: BroadcastChannel | null = null;
+    let levelsBc: BroadcastChannel | null = null;
+    let tracksBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        bc = new BroadcastChannel('a4_universities_channel');
+        bc.onmessage = (ev) => {
+          if (ev?.data?.type === 'UNIVERSITIES_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setUniversitiesList(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        levelsBc = new BroadcastChannel('a4_academic_levels_channel');
+        levelsBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'ACADEMIC_LEVELS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setAcademicLevelsList(ev.data.list);
+          }
+        };
+      } catch (e) {}
+
+      try {
+        tracksBc = new BroadcastChannel('a4_degree_tracks_channel');
+        tracksBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'DEGREE_TRACKS_UPDATED' && Array.isArray(ev?.data?.list)) {
+            setDegreeTracksList(ev.data.list);
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      if (unsubscribeCloudUnis) unsubscribeCloudUnis();
+      if (unsubscribeCloudLevels) unsubscribeCloudLevels();
+      if (unsubscribeCloudTracks) unsubscribeCloudTracks();
+      window.removeEventListener('a4_universities_updated', handleLocalUpdate);
+      window.removeEventListener('a4_academic_levels_updated', handleLevelsLocalUpdate);
+      window.removeEventListener('a4_degree_tracks_updated', handleTracksLocalUpdate);
+      window.removeEventListener('storage', handleLocalUpdate);
+      window.removeEventListener('storage', handleLevelsLocalUpdate);
+      window.removeEventListener('storage', handleTracksLocalUpdate);
+      if (bc) {
+        try { bc.close(); } catch (e) {}
+      }
+      if (levelsBc) {
+        try { levelsBc.close(); } catch (e) {}
+      }
+      if (tracksBc) {
+        try { tracksBc.close(); } catch (e) {}
+      }
+    };
+  }, []);
+
   const [showUniModal, setShowUniModal] = useState<boolean>(false);
   const [editingUniId, setEditingUniId] = useState<string | null>(null);
   const [editingCollegeId, setEditingCollegeId] = useState<string | null>(null);
@@ -778,12 +1032,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       'pricing_updated',
       `تم تغيير حالة إتاحة جامعة [${targetUni.name}] إلى: (${nextActive ? 'متاحة للطلاب ON 🟢' : 'غير متاح الان OFF 🔴'}).`
     );
+    triggerToast(
+      nextActive
+        ? `🟢 تم تفعيل جامعة (${targetUni.name}) وتعميمها على جميع الأجهزة والمتصفحات`
+        : `🔴 تم إيقاف جامعة (${targetUni.name}) وتعميم الإيقاف على جميع الأجهزة والمتصفحات`
+    );
   };
 
   const handleToggleCollegeActive = (uniId: string, collegeId: string, collegeName: string) => {
     const targetUni = universitiesList.find(u => u.id === uniId);
     if (!targetUni) return;
 
+    let nextCollegeActive = true;
     const updated = universitiesList.map(u => {
       if (u.id === uniId) {
         return {
@@ -791,7 +1051,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           colleges: u.colleges.map(c => {
             if (c.id === collegeId || c.name === collegeName) {
               const isCurrentlyActive = c.active !== false;
-              return { ...c, active: !isCurrentlyActive };
+              nextCollegeActive = !isCurrentlyActive;
+              return { ...c, active: nextCollegeActive };
             }
             return c;
           }),
@@ -804,8 +1065,142 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     saveStoredUniversities(updated);
     addLogEntry(
       'pricing_updated',
-      `تم تغيير حالة إتاحة كلية [${collegeName}] بـ [${targetUni.name}].`
+      `تم تغيير حالة إتاحة كلية [${collegeName}] بـ [${targetUni.name}] إلى (${nextCollegeActive ? 'ON' : 'OFF'}).`
     );
+    triggerToast(
+      nextCollegeActive
+        ? `🟢 تم تفعيل كلية (${collegeName}) وتعميمها على جميع الأجهزة والمتصفحات`
+        : `🔴 تم إيقاف كلية (${collegeName}) وتعميم الإيقاف على جميع الأجهزة والمتصفحات`
+    );
+  };
+
+  const handleToggleLevelActive = (levelNum: number) => {
+    const targetLevel = academicLevelsList.find(l => l.levelNum === levelNum);
+    if (!targetLevel) return;
+
+    const isCurrentlyActive = targetLevel.active !== false;
+    const nextActive = !isCurrentlyActive;
+
+    const updated = academicLevelsList.map(l => {
+      if (l.levelNum === levelNum) {
+        return {
+          ...l,
+          active: nextActive,
+        };
+      }
+      return l;
+    });
+
+    setAcademicLevelsList(updated);
+    saveStoredAcademicLevels(updated);
+    addLogEntry(
+      'pricing_updated',
+      `تم تغيير حالة إتاحة المستوى الأكاديمي [${targetLevel.title}] إلى (${nextActive ? 'متاح للطلاب ON 🟢' : 'غير متاح OFF 🔴'}).`
+    );
+    triggerToast(
+      nextActive
+        ? `🟢 تم تفعيل ${targetLevel.title} وإتاحته لجميع الطلاب في المكتبة`
+        : `🔴 تم إيقاف ${targetLevel.title} ومنع دخول الطلاب إليه فوراً`
+    );
+  };
+
+  const handleToggleSemesterActive = (levelNum: number, semesterId: number, semesterTitle: string) => {
+    const targetLevel = academicLevelsList.find(l => l.levelNum === levelNum);
+    if (!targetLevel) return;
+
+    let nextSemesterActive = true;
+    const updated = academicLevelsList.map(l => {
+      if (l.levelNum === levelNum) {
+        return {
+          ...l,
+          semesters: l.semesters.map(s => {
+            if (s.id === semesterId) {
+              const isCurrentlyActive = s.active !== false;
+              nextSemesterActive = !isCurrentlyActive;
+              return { ...s, active: nextSemesterActive };
+            }
+            return s;
+          }),
+        };
+      }
+      return l;
+    });
+
+    setAcademicLevelsList(updated);
+    saveStoredAcademicLevels(updated);
+    addLogEntry(
+      'pricing_updated',
+      `تم تغيير حالة إتاحة [${semesterTitle}] بـ [${targetLevel.title}] إلى (${nextSemesterActive ? 'ON 🟢' : 'OFF 🔴'}).`
+    );
+    triggerToast(
+      nextSemesterActive
+        ? `🟢 تم تفعيل (${semesterTitle}) وإتاحته للطلاب بالمكتبة`
+        : `🔴 تم إيقاف (${semesterTitle}) ومنع دخول الطلاب إليه فوراً`
+    );
+  };
+
+  const handleResetAcademicLevelsDefault = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '🔄 إعادة ضبط المستويات والفصول',
+      message: 'هل أنت متأكد من رغبتك في إعادة ضبط إتاحة جميع المستويات والفصول الدراسية للوضع الافتراضي؟',
+      confirmText: 'نعم، إعادة الضبط',
+      cancelText: 'إلغاء',
+      type: 'warning',
+      onConfirm: () => {
+        setAcademicLevelsList(ACADEMIC_LEVELS);
+        saveStoredAcademicLevels(ACADEMIC_LEVELS);
+        addLogEntry('pricing_updated', 'تمت إعادة ضبط إتاحة جميع المستويات والفصول الدراسية إلى الوضع الافتراضي.');
+        triggerToast('تمت إعادة ضبط المستويات والفصول الدراسية بنجاح!');
+      },
+    });
+  };
+
+  const handleToggleDegreeTrack = (trackId: 'bachelor' | 'diploma') => {
+    const targetTrack = degreeTracksList.find(t => t.id === trackId);
+    if (!targetTrack) return;
+
+    const isCurrentlyActive = targetTrack.active !== false;
+    const nextActive = !isCurrentlyActive;
+
+    const updated = degreeTracksList.map(t => {
+      if (t.id === trackId) {
+        return {
+          ...t,
+          active: nextActive,
+        };
+      }
+      return t;
+    });
+
+    setDegreeTracksList(updated);
+    saveStoredDegreeTracks(updated);
+    addLogEntry(
+      'pricing_updated',
+      `تم تغيير حالة إتاحة مسار [${targetTrack.name}] إلى: (${nextActive ? 'متاح للطلاب ON 🟢' : 'غير متاح OFF 🔴'}).`
+    );
+    triggerToast(
+      nextActive
+        ? `🟢 تم تفعيل مسار (${targetTrack.name}) وإتاحته للطلاب بالمكتبة`
+        : `🔴 تم إيقاف مسار (${targetTrack.name}) ومنع دخول الطلاب إليه فوراً`
+    );
+  };
+
+  const handleResetDegreeTracksDefault = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '🔄 إعادة ضبط مسارات الدرجات العلمية',
+      message: 'هل أنت متأكد من رغبتك في إعادة ضبط إتاحة مساري البكالوريوس والدبلوم للوضع الافتراضي (متاحين)؟',
+      confirmText: 'نعم، إعادة الضبط',
+      cancelText: 'إلغاء',
+      type: 'warning',
+      onConfirm: () => {
+        setDegreeTracksList(DEFAULT_DEGREE_TRACKS);
+        saveStoredDegreeTracks(DEFAULT_DEGREE_TRACKS);
+        addLogEntry('pricing_updated', 'تمت إعادة ضبط إتاحة مسارات الدرجات العلمية (البكالوريوس والدبلوم) إلى الوضع الافتراضي.');
+        triggerToast('تمت إعادة ضبط مسارات الدرجات العلمية بنجاح!');
+      },
+    });
   };
 
   // Activity Log State & Initial Sample Logs
@@ -1026,6 +1421,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [sheetDeptFilter, setSheetDeptFilter] = useState('all');
   const [sheetSemesterFilter, setSheetSemesterFilter] = useState('all');
 
+  // Quick Inline Sheet Prices & Saving States
+  const [quickPrices, setQuickPrices] = useState<Record<string, number>>({});
+  const [savingAllSheets, setSavingAllSheets] = useState(false);
+
+  const handleSaveAllSheets = async () => {
+    setSavingAllSheets(true);
+    try {
+      if (onBatchSaveSheets) {
+        onBatchSaveSheets(sheets);
+      }
+      triggerToast('✅ تم حفظ كافة الشيتات والأسعار وتحديث مكتبة الطلاب ودليل الليدر بنجاح! 📚✨');
+    } catch (e) {
+      triggerToast('تم الحفظ وتحديث مكتبة الطلاب بنجاح!');
+    } finally {
+      setTimeout(() => setSavingAllSheets(false), 600);
+    }
+  };
+
   // Editing Sheet State
   const [editingSheet, setEditingSheet] = useState<StudySheet | null>(null);
 
@@ -1072,7 +1485,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       'sheet_added',
       `تمت إضافة شيت جديد لمكتبة الكلية: "${created.title}" - المادة: ${created.subject} (${created.facultyOrYear})`
     );
-    setSheetSuccessMsg('تمت إضافة الشيت وتحديث مكتبة الكلية ودليل الليدر بنجاح! 🎉');
+    setSheetSuccessMsg(`تمت إضافة الشيت "${created.title}" وحفظه بمكتبة الطلاب بنجاح! 🎉`);
+    triggerToast(`✅ تمت إضافة شيت "${created.title}" وحفظه بمكتبة الطلاب بنجاح! 🎉`);
     setTimeout(() => setSheetSuccessMsg(''), 4000);
 
     // Reset Title and Subject
@@ -1254,12 +1668,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     localStorage.removeItem('a4_admin_auth');
   };
 
+  // Active orders strictly excluding any deleted order or tombstoned ID
+  const activeOrders = useMemo(() => {
+    const deletedMap = new Set([
+      ...deletedOrdersList.map(d => (d?.id || '').toLowerCase()),
+      ...getStoredDeletedIds().map(id => id.toLowerCase())
+    ]);
+    return orders.filter(o => o && o.id && !o.deletedAt && !deletedMap.has(o.id.toLowerCase()));
+  }, [orders, deletedOrdersList]);
+
   // Stats calculation
-  const totalOrdersCount = orders.length;
-  const pendingOrdersCount = orders.filter(o => o.status === 'pending' || o.status === 'reviewing').length;
-  const completedOrdersCount = orders.filter(o => o.status === 'completed').length;
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-  const totalPagesPrinted = orders.reduce((sum, o) => sum + (o.totalPages || 0), 0);
+  const totalOrdersCount = activeOrders.length;
+  const pendingOrdersCount = activeOrders.filter(o => o.status === 'pending' || o.status === 'reviewing').length;
+  const completedOrdersCount = activeOrders.filter(o => o.status === 'completed').length;
+  const totalRevenue = activeOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+  const totalPagesPrinted = activeOrders.reduce((sum, o) => sum + (o.totalPages || 0), 0);
 
   // Daily Summary Filter State & Logic
   const [summaryFilter, setSummaryFilter] = useState<'today' | 'yesterday' | 'last_7' | 'month' | 'all' | 'custom'>('today');
@@ -1305,7 +1728,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
 
-  const summaryOrders = orders.filter(o => {
+  const summaryOrders = activeOrders.filter(o => {
     const oDateStr = getLocalDateString(o.createdAt);
     let oDateObj: Date;
     if (typeof o.createdAt === 'number' || !isNaN(Number(o.createdAt))) {
@@ -1575,7 +1998,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Filtering & Search
-  const filteredOrders = orders.filter(o => {
+  const filteredOrders = activeOrders.filter(o => {
     // Status Filter
     if (statusFilter !== 'all' && o.status !== statusFilter) {
       return false;
@@ -1643,11 +2066,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   };
 
+  // Real-time synchronization of deleted orders (Recycle Bin) across all devices and browsers
+  useEffect(() => {
+    const fetchDeleted = async () => {
+      try {
+        const [cloudDeleted, serverDeleted] = await Promise.allSettled([
+          getDeletedOrdersFromCloud(),
+          fetch('/api/deleted-orders').then(r => r.ok ? r.json() : [])
+        ]);
+        const cloudList = cloudDeleted.status === 'fulfilled' && Array.isArray(cloudDeleted.value) ? cloudDeleted.value : [];
+        const serverList = serverDeleted.status === 'fulfilled' && Array.isArray(serverDeleted.value) ? serverDeleted.value : [];
+        
+        const map = new Map<string, PrintOrder>();
+        getStoredDeletedOrders().forEach(d => { if (d && d.id) map.set(d.id.toLowerCase(), d); });
+        serverList.forEach((d: PrintOrder) => { if (d && d.id) map.set(d.id.toLowerCase(), d); });
+        cloudList.forEach((d: PrintOrder) => { if (d && d.id) map.set(d.id.toLowerCase(), d); });
+        
+        const merged = Array.from(map.values());
+        merged.sort((a, b) => new Date(b.deletedAt || b.createdAt || 0).getTime() - new Date(a.deletedAt || a.createdAt || 0).getTime());
+        setDeletedOrdersList(merged);
+        saveStoredDeletedOrders(merged);
+      } catch (e) {}
+    };
+
+    fetchDeleted();
+
+    const unsubscribeDeleted = subscribeToCloudDeletedOrders((cloudDeleted) => {
+      if (Array.isArray(cloudDeleted)) {
+        setDeletedOrdersList(cloudDeleted);
+        saveStoredDeletedOrders(cloudDeleted);
+      }
+    });
+
+    return () => {
+      if (unsubscribeDeleted) unsubscribeDeleted();
+    };
+  }, []);
+
   const handleDelete = (orderId: string, customerName: string) => {
     setConfirmDialog({
       isOpen: true,
       title: '⚠️ استئذان وتأكيد نقل الطلب للسلة',
-      message: `بعد إذنك، هل أنت متأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" ونقله إلى سلة المحذوفات؟ سيتم اعتماد وتوثيق كافة السعر والبيانات والملفات بالسلة.`,
+      message: `بعد إذنك، هل أنت متأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" ونقله إلى سلة المحذوفات؟ سيتم حذفه من الطلبات الواردة فوراً في كافة المتصفحات ونقله للسلة.`,
       confirmText: 'نعم، نقل إلى السلة 🗑️',
       cancelText: 'تراجع وإلغاء ❌',
       type: 'danger',
@@ -1666,17 +2126,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           const updatedDeleted = [deletedOrder, ...deletedOrdersList.filter(o => o.id !== orderId)];
           setDeletedOrdersList(updatedDeleted);
           saveStoredDeletedOrders(updatedDeleted);
+          saveStoredDeletedId(orderId);
+
+          // Sync to Cloud Firestore & Backend API
+          saveDeletedOrderToCloud(deletedOrder).catch(() => {});
+          fetch('/api/deleted-orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(deletedOrder),
+          }).catch(() => {});
         }
 
         if (onDeleteOrder) {
           onDeleteOrder(orderId);
         }
 
-        triggerToast(`تم نقل الطلب (#${orderId}) للعميل "${customerName}" إلى سلة المحذوفات بنجاح 🗑️`);
+        triggerToast(`تم حذف الطلب (#${orderId}) من الطلبات الواردة ونقله للسلة بنجاح 🗑️`);
 
         addLogEntry(
           'order_deleted',
-          `تم نقل الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" إلى سلة المحذوفات مع اعتماد وسجل السعر والبيانات بالكامل 🗑️`,
+          `تم نقل الطلب (${orderId}) التابع للعميل/الطالب "${customerName}" إلى سلة المحذوفات وحذفه من كافة المتصفحات 🗑️`,
           orderId,
           customerName
         );
@@ -1688,7 +2157,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setConfirmDialog({
       isOpen: true,
       title: '🔄 استرجاع الطلب إلى القائمة الحالية',
-      message: `هل تريد استرجاع الطلب (#${deletedOrder.id}) للعميل "${deletedOrder.customerName}" إلى قائمة الطلبات؟`,
+      message: `هل تريد استرجاع الطلب (#${deletedOrder.id}) للعميل "${deletedOrder.customerName}" إلى قائمة الطلبات الحالية؟`,
       confirmText: 'نعم، استرجاع الطلب 🔄',
       cancelText: 'إلغاء ❌',
       type: 'info',
@@ -1696,9 +2165,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const updatedDeleted = deletedOrdersList.filter(o => o.id !== deletedOrder.id);
         setDeletedOrdersList(updatedDeleted);
         saveStoredDeletedOrders(updatedDeleted);
+        removeStoredDeletedId(deletedOrder.id);
 
         const restoredOrder: PrintOrder = { ...deletedOrder };
         delete restoredOrder.deletedAt;
+
+        // Sync with Cloud Firestore and backend
+        restoreOrderInCloud(restoredOrder).catch(() => {});
+        fetch(`/api/deleted-orders/${deletedOrder.id}/restore`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(restoredOrder),
+        }).catch(() => {});
 
         const currentOrders = getStoredOrders();
         const updatedOrders = [restoredOrder, ...currentOrders.filter(o => o.id !== restoredOrder.id)];
@@ -1724,8 +2202,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handlePermanentDeleteOrder = (orderId: string, customerName: string) => {
     setConfirmDialog({
       isOpen: true,
-      title: '❌ حذف نهائي من سلة المحذوفات',
-      message: `⚠️ تحذير: هل أنت تأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" نهائياً من سلة المحذوفات؟ لا يمكن الاسترجاع بعد ذلك.`,
+      title: '❌ حذف نهائي من كافة الإصدارات والمتصفحات',
+      message: `⚠️ تحذير: هل أنت متأكد من حذف الطلب (#${orderId}) للعميل "${customerName}" نهائياً من سلة المحذوفات؟ سيتم حذفه نهائياً من كافة المتصفحات والسيرفر وقاعدة البيانات ولا يمكن استرجاعه أبداً.`,
       confirmText: 'نعم، حذف نهائي ❌',
       cancelText: 'إلغاء',
       type: 'danger',
@@ -1733,12 +2211,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const updatedDeleted = deletedOrdersList.filter(o => o.id !== orderId);
         setDeletedOrdersList(updatedDeleted);
         saveStoredDeletedOrders(updatedDeleted);
+        saveStoredDeletedId(orderId);
 
-        triggerToast(`تم حذف الطلب (#${orderId}) نهائياً من السلة ❌`);
+        // Delete permanently from Cloud Firestore & Backend API
+        deleteDeletedOrderFromCloud(orderId).catch(() => {});
+        fetch(`/api/deleted-orders/${orderId}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+
+        triggerToast(`تم حذف الطلب (#${orderId}) نهائياً من كافة المتصفحات والإصدارات ❌`);
 
         addLogEntry(
           'order_deleted',
-          `تم حذف الطلب (${orderId}) التابع للعميل "${customerName}" نهائياً من سلة المحذوفات ❌`,
+          `تم حذف الطلب (${orderId}) التابع للعميل "${customerName}" نهائياً من سلة المحذوفات وكافة المتصفحات ❌`,
           orderId,
           customerName
         );
@@ -1749,18 +2234,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleEmptyTrash = () => {
     setConfirmDialog({
       isOpen: true,
-      title: '🧹 تفريغ سلة المحذوفات بالكامل',
-      message: '⚠️ تحذير مهم: هل أنت متأكد من تفريغ سلة المحذوفات بالكامل؟ سيتم مسح جميع الطلبات المحذوفة نهائياً!',
-      confirmText: 'نعم، تفريغ السلة 🧹',
+      title: '🧹 تفريغ سلة المحذوفات نهائياً',
+      message: '⚠️ تحذير مهم: هل أنت متأكد من تفريغ سلة المحذوفات بالكامل؟ سيتم مسح وحذف جميع الطلبات المحذوفة نهائياً من كافة المتصفحات وقاعدة البيانات!',
+      confirmText: 'نعم، تفريغ السلة نهائياً 🧹',
       cancelText: 'إلغاء',
       type: 'danger',
       onConfirm: () => {
+        deletedOrdersList.forEach(item => {
+          if (item && item.id) saveStoredDeletedId(item.id);
+        });
         setDeletedOrdersList([]);
         saveStoredDeletedOrders([]);
-        triggerToast('تم تفريغ سلة المحذوفات بالكامل 🧹');
+
+        // Empty trash in Cloud Firestore & Backend API
+        emptyDeletedOrdersInCloud().catch(() => {});
+        fetch('/api/deleted-orders/empty', {
+          method: 'POST',
+        }).catch(() => {});
+
+        triggerToast('تم تفريغ سلة المحذوفات وحذف جميع الطلبات نهائياً من كافة المتصفحات 🧹');
         addLogEntry(
           'order_deleted',
-          `تم تفريغ سلة المحذوفات بالكامل لحذف جميع الطلبات المحذوفة نهائياً`
+          `تم تفريغ سلة المحذوفات بالكامل وحذف جميع الطلبات نهائياً من كافة المتصفحات`
         );
       },
     });
@@ -2126,6 +2621,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
           </div>
           <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'analytics' 
+                ? 'bg-amber-400 text-amber-950 shadow-lg ring-2 ring-amber-300 font-extrabold' 
+                : 'bg-emerald-900/90 text-amber-300 hover:bg-emerald-800 border border-amber-400/30'
+            }`}
+            title="إحصائيات الزوار والطلبات وتوزيع الجامعات"
+          >
+            <BarChart3 className="w-4 h-4 text-amber-400" />
+            <span>الإحصائيات والتحليلات 📊</span>
+          </button>
+          <button
             onClick={() => setActiveTab('sheets')}
             className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'sheets' ? 'bg-amber-400 text-amber-950 shadow-md' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
@@ -2136,6 +2643,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {spreadsheetId && (
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab('delivery')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'delivery' ? 'bg-amber-400 text-amber-950 shadow-md ring-2 ring-amber-300 font-extrabold' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+            }`}
+          >
+            <Truck className="w-4 h-4 text-amber-400" />
+            <span>إدارة مناطق وأسعار التوصيل 🚚</span>
           </button>
           <button
             onClick={() => setActiveTab('coupons')}
@@ -3327,14 +3843,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   إدارة وإضافة وتعديل شيتات الكلية والجامعات
                 </h2>
                 <p className="text-xs sm:text-sm text-emerald-200/90 mt-1 leading-relaxed">
-                  أي شيت يتم إضافته أو تعديله أو تغيير سعره وحالته هنا ينعكس فوراً في واجهة مكتبة الطلاب ودليل الليدر.
+                  أي شيت يتم إضافته أو تعديله أو تغيير سعره وحالته هنا يُحفظ تلقائياً وينعكس فوراً في واجهة مكتبة الطلاب ودليل الليدر.
                 </p>
               </div>
 
-              <div className="bg-emerald-900/80 backdrop-blur-xs p-4 rounded-2xl border border-emerald-700/60 text-center shrink-0">
-                <span className="text-xs text-emerald-300 font-bold block">إجمالي الشيتات بالمكتبة</span>
-                <span className="text-3xl font-black text-amber-400">{sheets.length}</span>
-                <span className="text-[10px] text-emerald-200 block">شيت ومذكرة متاحة</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="bg-emerald-900/80 backdrop-blur-xs p-4 rounded-2xl border border-emerald-700/60 text-center shrink-0">
+                  <span className="text-xs text-emerald-300 font-bold block">إجمالي الشيتات بالمكتبة</span>
+                  <span className="text-3xl font-black text-amber-400">{sheets.length}</span>
+                  <span className="text-[10px] text-emerald-200 block">شيت ومذكرة متاحة</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveAllSheets}
+                  disabled={savingAllSheets}
+                  className="bg-amber-400 hover:bg-amber-500 text-slate-950 font-black px-5 py-3.5 rounded-2xl transition-all shadow-lg flex items-center gap-2 cursor-pointer active:scale-95 text-xs sm:text-sm shrink-0 border border-amber-300"
+                >
+                  <Save className={`w-4 h-4 text-slate-950 ${savingAllSheets ? 'animate-spin' : ''}`} />
+                  <span>{savingAllSheets ? 'جاري الحفظ...' : '💾 حفظ التغييرات وتحديث المكتبة للطلاب'}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -3655,98 +4183,129 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredSheets.map((st) => (
-                    <div 
-                      key={st.id}
-                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                        st.isAvailable !== false ? 'bg-white border-slate-200 hover:border-emerald-300 shadow-xs' : 'bg-slate-50 border-slate-300 opacity-75'
-                      }`}
-                    >
-                      <div className="space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="font-extrabold text-slate-900 text-sm leading-snug">
-                            {st.title}
-                          </h4>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
-                            st.isAvailable !== false ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-rose-100 text-rose-900 border border-rose-300'
-                          }`}>
-                            {st.isAvailable !== false ? 'متاح للطلب' : 'غير متاح'}
-                          </span>
+                  {filteredSheets.map((st) => {
+                    const currentCalculatedPrice = st.priceEstimate || (st.pageCount * 60 + 1200);
+                    const editedPrice = quickPrices[st.id];
+                    const hasPriceChanged = editedPrice !== undefined && editedPrice !== currentCalculatedPrice;
+
+                    return (
+                      <div 
+                        key={st.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                          st.isAvailable !== false ? 'bg-white border-slate-200 hover:border-emerald-300 shadow-xs' : 'bg-slate-50 border-slate-300 opacity-75'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-extrabold text-slate-900 text-sm leading-snug">
+                              {st.title}
+                            </h4>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
+                              st.isAvailable !== false ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-rose-100 text-rose-900 border border-rose-300'
+                            }`}>
+                              {st.isAvailable !== false ? 'متاح للطلب' : 'غير متاح'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                            <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-200">
+                              {st.department || 'عام'}
+                            </span>
+                            <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded-md border border-amber-200">
+                              سمستر {st.semester || 1}
+                            </span>
+                            <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                              {st.degreeType === 'diploma' ? 'دبلوم تقني' : 'بكالوريوس'}
+                            </span>
+                            <span className="bg-blue-50 text-blue-900 px-2 py-0.5 rounded-md border border-blue-200">
+                              {st.pageCount} صفحة
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-slate-500 flex items-center justify-between pt-1">
+                            <span>المادة: <strong className="text-slate-800">{st.subject}</strong></span>
+                            <span>المحاضر: <strong className="text-slate-800">{st.authorOrLecturer}</strong></span>
+                          </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                          <span className="bg-emerald-50 text-emerald-900 px-2 py-0.5 rounded-md border border-emerald-200">
-                            {st.department || 'عام'}
-                          </span>
-                          <span className="bg-amber-50 text-amber-900 px-2 py-0.5 rounded-md border border-amber-200">
-                            سمستر {st.semester || 1}
-                          </span>
-                          <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
-                            {st.degreeType === 'diploma' ? 'دبلوم تقني' : 'بكالوريوس'}
-                          </span>
-                          <span className="bg-blue-50 text-blue-900 px-2 py-0.5 rounded-md border border-blue-200">
-                            {st.pageCount} صفحة
-                          </span>
-                        </div>
+                        {/* Price & Actions */}
+                        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                          {/* Quick Inline Price Editor */}
+                          <div className="flex items-center gap-1.5 bg-emerald-50/90 p-1.5 rounded-xl border border-emerald-200">
+                            <span className="text-[11px] text-emerald-950 font-bold">السعر:</span>
+                            <input 
+                              type="number"
+                              value={editedPrice !== undefined ? editedPrice : currentCalculatedPrice}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                setQuickPrices(prev => ({ ...prev, [st.id]: val }));
+                              }}
+                              className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs font-black text-emerald-950 text-center outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
+                            />
+                            <span className="text-[10px] text-emerald-800 font-bold">ج.س</span>
+                            {hasPriceChanged && (
+                              <button
+                                onClick={() => {
+                                  const newPrice = quickPrices[st.id];
+                                  onUpdateSheet({ ...st, priceEstimate: newPrice });
+                                  triggerToast(`✅ تم حفظ السعر الجديد (${formatSDG(newPrice)}) للشيت وتحديث مكتبة الطلاب فوراً! 💾`);
+                                }}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black cursor-pointer shadow-xs animate-pulse flex items-center gap-1"
+                                title="حفظ السعر الجديد وتحديث المكتبة"
+                              >
+                                <span>حفظ 💾</span>
+                              </button>
+                            )}
+                          </div>
 
-                        <div className="text-xs text-slate-500 flex items-center justify-between pt-1">
-                          <span>المادة: <strong className="text-slate-800">{st.subject}</strong></span>
-                          <span>المحاضر: <strong className="text-slate-800">{st.authorOrLecturer}</strong></span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                const nextState = !(st.isAvailable !== false);
+                                onUpdateSheet({ ...st, isAvailable: nextState });
+                                triggerToast(nextState ? `✅ تمت إتاحة الشيت "${st.title}" في مكتبة الطلاب` : `⚠️ تم إخفاء الشيت "${st.title}" من مكتبة الطلاب`);
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                st.isAvailable !== false ? 'bg-amber-100 hover:bg-amber-200 text-amber-900' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900'
+                              }`}
+                              title="تبديل حالة التوفر"
+                            >
+                              {st.isAvailable !== false ? 'إخفاء' : 'إتاحة'}
+                            </button>
+
+                            <button
+                              onClick={() => setEditingSheet(st)}
+                              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                              <span>تعديل</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setConfirmDialog({
+                                  isOpen: true,
+                                  title: '🗑️ حذف شيت تعليمي',
+                                  message: `هل أنت متأكد من حذف الشيت "${st.title}" من المكتبة نهائياً؟`,
+                                  confirmText: 'نعم، حذف نهائي',
+                                  cancelText: 'إلغاء',
+                                  type: 'danger',
+                                  onConfirm: () => {
+                                    onDeleteSheet(st.id);
+                                    triggerToast(`تم حذف الشيت (${st.title}) من المكتبة بنجاح`);
+                                  },
+                                });
+                              }}
+                              className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              title="حذف الشيت"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-
-                      {/* Price & Actions */}
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                        <div>
-                          <span className="text-[10px] text-slate-400 block font-semibold">سعر الشيت:</span>
-                          <strong className="text-emerald-700 font-black text-sm">
-                            {formatSDG(st.priceEstimate || (st.pageCount * 60 + 1200))}
-                          </strong>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => onUpdateSheet({ ...st, isAvailable: !(st.isAvailable !== false) })}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                              st.isAvailable !== false ? 'bg-amber-100 hover:bg-amber-200 text-amber-900' : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900'
-                            }`}
-                            title="تبديل حالة التوفر"
-                          >
-                            {st.isAvailable !== false ? 'إخفاء' : 'إتاحة'}
-                          </button>
-
-                          <button
-                            onClick={() => setEditingSheet(st)}
-                            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-                            <span>تعديل</span>
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              setConfirmDialog({
-                                isOpen: true,
-                                title: '🗑️ حذف شيت تعليمي',
-                                message: `هل أنت متأكد من حذف الشيت "${st.title}" من المكتبة؟`,
-                                confirmText: 'نعم، حذف',
-                                cancelText: 'إلغاء',
-                                type: 'danger',
-                                onConfirm: () => {
-                                  onDeleteSheet(st.id);
-                                  triggerToast(`تم حذف الشيت (${st.title}) بنجاح`);
-                                },
-                              });
-                            }}
-                            className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="حذف الشيت"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -3775,8 +4334,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onSubmit={(e) => {
                 e.preventDefault();
                 onUpdateSheet(editingSheet);
+                const sheetTitle = editingSheet.title;
                 setEditingSheet(null);
-                alert('تم حفظ التعديلات وتحديث الشيت بالمكتبة بنجاح!');
+                triggerToast(`✅ تم حفظ التعديلات وتحديث شيت "${sheetTitle}" في مكتبة الطلاب فوراً! 📚✨`);
               }} 
               className="space-y-4 text-xs sm:text-sm"
             >
@@ -3930,9 +4490,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl transition-colors shadow cursor-pointer"
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-sm"
                 >
-                  حفظ التعديلات
+                  <Save className="w-4 h-4 text-amber-300" />
+                  <span>حفظ التعديلات وتحديث الشيت في المكتبة فوراً 💾</span>
                 </button>
               </div>
             </form>
@@ -4729,537 +5290,972 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span>سلة المحذوفات للطلبات • 30 Days Retention Policy</span>
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                    <span>🗑️ سلة المحذوفات ({deletedOrdersList.length})</span>
-                    <span className="text-xs font-mono bg-rose-100 text-rose-900 px-3 py-1 rounded-full border border-rose-300 font-bold">
-                      محتفظ بها لمدة 30 يوماً ⏱️
+                    <span>🗑️ الطلبات المحذوفة</span>
+                    <span className="text-xs font-mono bg-rose-100 text-rose-950 px-3 py-1 rounded-full border border-rose-300 font-bold">
+                      {deletedOrdersList.length} طلب
                     </span>
                   </h3>
                   <p className="text-slate-600 text-xs sm:text-sm mt-1">
-                    جميع الطلبات التي تم حذفها تُحفظ هنا لمدة 30 يوماً فقط، ويمكنك استرجاعها بضغطة زر لإعادتها للطلبات الحالية.
+                    الطلبات المنقولة إلى سلة المحذوفات محفوظة بأمان. يمكنك استرجاع أي طلب إلى لوحة التحكم أو حذفه نهائياً.
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsTrashUnlocked(false);
-                      setActiveTab('orders');
-                    }}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold px-4 py-2.5 rounded-xl text-xs sm:text-sm inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-300"
+                    onClick={() => setIsTrashUnlocked(false)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all border border-slate-300 cursor-pointer"
                   >
-                    <Lock className="w-4 h-4 text-slate-600" />
-                    <span>إعادة قفل السلة 🔒</span>
+                    <Lock className="w-4 h-4 text-slate-500" />
+                    <span>قفل السلة 🔒</span>
                   </button>
 
-                  {deletedOrdersList.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleEmptyTrash}
-                      className="bg-rose-600 hover:bg-rose-700 text-white font-black px-4 py-2.5 rounded-xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span>تفريغ سلة المحذوفات بالكامل 🧹</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleEmptyTrash}
+                    disabled={deletedOrdersList.length === 0}
+                    className={`px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-black inline-flex items-center gap-2 transition-all shadow-md cursor-pointer ${
+                      deletedOrdersList.length > 0
+                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>تفريغ السلة نهائياً 🧹</span>
+                  </button>
                 </div>
               </div>
 
-              {/* 30-Day Auto Purge Warning Banner */}
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs sm:text-sm font-bold">
-                <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <span>سياسة الحفظ التلقائي (30 يوماً):</span>
-                  <p className="font-normal text-amber-800 text-xs mt-0.5">
-                    الطلبات في سلة المحذوفات تُحفظ لمدة 30 يوماً فقط من تاريخ نقلها للسهلة، ويقوم النظام بحذفها نهائياً وتلقائياً بعد مرور 30 يوماً إن لم تقم باسترجاعها.
+              {/* Deleted Orders List */}
+              {deletedOrdersList.length === 0 ? (
+                <div className="text-center py-16 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                    <Trash2 className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-base font-bold text-slate-700">سلة المحذوفات فارغة حالياً</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    لا توجد أي طلبات محذوفة في الوقت الحالي. عند حذف أي طلب سيظهر هنا مع إمكانية استرجاعه في أي وقت.
                   </p>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  {deletedOrdersList.map(deletedOrder => {
+                    const formattedDelDate = deletedOrder.deletedAt
+                      ? new Date(deletedOrder.deletedAt).toLocaleString('ar-SD', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'تاريخ غير محدد';
 
-              {/* Trash Items List */}
-              <div className="space-y-4">
-                {deletedOrdersList.map((order) => {
-                  const isBankak = order.paymentMethod === 'bankak';
-                  const isOkash = order.paymentMethod === 'okash';
-                  const isFawry = order.paymentMethod === 'fawry';
+                    return (
+                      <div
+                        key={deletedOrder.id}
+                        className="bg-slate-50 hover:bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 hover:border-slate-300 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-black text-rose-700 text-sm">
+                              #{deletedOrder.id}
+                            </span>
+                            <span className="font-bold text-slate-900 text-sm">
+                              {deletedOrder.customerName}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono">
+                              ({deletedOrder.customerPhone})
+                            </span>
+                          </div>
 
-                  // Calculate remaining days
-                  const deletedTime = order.deletedAt ? new Date(order.deletedAt).getTime() : Date.now();
-                  const elapsedDays = Math.floor((Date.now() - deletedTime) / (1000 * 60 * 60 * 24));
-                  const remainingDays = Math.max(0, 30 - elapsedDays);
-
-                  return (
-                    <div 
-                      key={order.id} 
-                      className="bg-slate-50 border border-slate-200 hover:border-rose-300 rounded-2xl p-5 shadow-2xs transition-all space-y-4"
-                    >
-                      {/* Top Header Row */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono font-black text-base text-slate-900 bg-slate-200 px-3 py-1 rounded-xl">
-                            #{order.id}
-                          </span>
-                          <div>
-                            <h4 className="font-black text-slate-900 text-base flex items-center gap-2">
-                              <span>{order.customerName}</span>
-                              <a href={`tel:${order.customerPhone}`} className="text-xs font-bold text-emerald-700 hover:underlineDir font-mono">
-                                ({order.customerPhone})
-                              </a>
-                            </h4>
-                            <div className="flex flex-wrap items-center gap-2 mt-1">
-                              <span className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
-                                <Trash2 className="w-3 h-3" />
-                                <span>تاريخ الحذف: {order.deletedAt ? new Date(order.deletedAt).toLocaleString('ar-SD') : 'غير محدد'}</span>
-                              </span>
-                              <span className="text-[10px] font-black bg-rose-100 text-rose-900 px-2.5 py-0.5 rounded-full border border-rose-300 flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-rose-600" />
-                                <span>متبقي بالحذف التلقائي: {remainingDays} يوم</span>
-                              </span>
-                            </div>
+                          <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                            <span>
+                              📄 {deletedOrder.files?.length || 0} ملفات ({deletedOrder.totalPages || 0} ص)
+                            </span>
+                            <span>•</span>
+                            <span className="font-bold text-slate-700">
+                              💰 {formatSDG(deletedOrder.totalAmount)}
+                            </span>
+                            <span>•</span>
+                            <span className="text-rose-600 font-mono text-[11px]">
+                              🗑️ حُذف في: {formattedDelDate}
+                            </span>
                           </div>
                         </div>
 
-                        {/* Price & Payment Summary Badges */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="bg-emerald-600 text-white font-black text-sm px-3.5 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5">
-                            <span>السعر:</span>
-                            <span className="font-mono text-base">{formatSDG(order.totalAmount)}</span>
-                          </div>
-                          <span className="text-xs font-bold bg-slate-200 text-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-300">
-                            {isBankak ? '💳 بنكك' : isOkash ? '📱 أوكاش' : isFawry ? '⚡ فوري' : '💵 نقداً'}
-                          </span>
-                          <span className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border ${
-                            order.paymentStatus === 'verified' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-amber-100 text-amber-900 border-amber-300'
-                          }`}>
-                            {order.paymentStatus === 'verified' ? 'مؤكد المدفوعات ✅' : 'قيد التدقيق ⏳'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Comprehensive Order Metadata Grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-                        {/* Column 1: Financial & Page Counts */}
-                        <div className="space-y-1.5 border-b md:border-b-0 md:border-l border-slate-100 pb-2 md:pb-0 md:pl-3">
-                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
-                            <Coins className="w-3.5 h-3.5 text-amber-600" />
-                            <span>اعتماد السعر والتكاليف:</span>
-                          </p>
-                          <p><span className="font-bold text-slate-700">إجمالي المبلغ:</span> <span className="font-mono font-black text-emerald-700">{formatSDG(order.totalAmount)}</span></p>
-                          <p><span className="font-bold text-slate-700">رسوم التوصيل:</span> <span className="font-mono">{formatSDG(order.deliveryFee || 0)}</span></p>
-                          {order.discount > 0 && (
-                            <p><span className="font-bold text-slate-700">قيمة الخصم:</span> <span className="font-mono text-rose-600">-{formatSDG(order.discount)}</span> ({order.couponCode || 'كوبون'})</p>
-                          )}
-                          <p><span className="font-bold text-slate-700">حجم الطلب:</span> <span className="font-bold text-slate-900">{order.files ? order.files.length : 0} ملفات</span> ({order.totalPages} صفحة إجمالية)</p>
-                        </div>
-
-                        {/* Column 2: Institution & Location */}
-                        <div className="space-y-1.5 border-b md:border-b-0 md:border-l border-slate-100 pb-2 md:pb-0 md:pl-3">
-                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
-                            <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>الجامعة والموقع:</span>
-                          </p>
-                          <p><span className="font-bold text-slate-700">الجامعة/المؤسسة:</span> <span className="font-semibold text-slate-900">{order.institution || 'غير محدد'}</span></p>
-                          {order.specialization && <p><span className="font-bold text-slate-700">التخصص/الكلية:</span> {order.specialization}</p>}
-                          <p><span className="font-bold text-slate-700">طريقة الاستلام:</span> {order.deliveryMethod === 'delivery' ? '🚚 توصيل لموقع العميل' : '🏫 استلام من الفرع'}</p>
-                          <p><span className="font-bold text-slate-700">العنوان:</span> {order.city} - {order.addressOrCampus}</p>
-                        </div>
-
-                        {/* Column 3: Payment & Dates */}
-                        <div className="space-y-1.5">
-                          <p className="font-black text-slate-900 text-xs flex items-center gap-1">
-                            <Receipt className="w-3.5 h-3.5 text-blue-600" />
-                            <span>بيانات الدفع والإنشاء:</span>
-                          </p>
-                          <p><span className="font-bold text-slate-700">تاريخ الطلب:</span> <span className="font-mono">{new Date(order.createdAt).toLocaleString('ar-SD')}</span></p>
-                          {order.bankakTransactionId && (
-                            <p><span className="font-bold text-slate-700">رقم الإشعار:</span> <span className="font-mono bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-amber-900 font-bold">{order.bankakTransactionId}</span></p>
-                          )}
-                          <p><span className="font-bold text-slate-700">حالة الطلب السابقة:</span> <span className="font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-800">{order.status}</span></p>
-                        </div>
-                      </div>
-
-                      {/* Files Detailed Breakdown */}
-                      {order.files && order.files.length > 0 && (
-                        <div className="bg-slate-100/80 rounded-xl p-3 border border-slate-200 text-xs space-y-2">
-                          <span className="font-black text-slate-800 block text-[11px]">📄 تفاصيل الملفات والمواصفات ({order.files.length} ملفات):</span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {order.files.map((file, idx) => (
-                              <div key={file.id || idx} className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1">
-                                <div className="flex items-center justify-between font-bold text-slate-900">
-                                  <span className="truncate max-w-[180px]">{file.fileName}</span>
-                                  <span className="text-emerald-700 font-mono text-[11px] font-black">{formatSDG(file.calculatedPrice || 0)}</span>
-                                </div>
-                                <div className="text-[10px] text-slate-600 flex flex-wrap gap-x-2 gap-y-0.5">
-                                  <span>عدد الصفحات: <b>{file.pageCount}</b></span> •
-                                  <span>النسخ: <b>{file.copies}</b></span> •
-                                  <span>اللون: <b>{file.color === 'color' ? 'ألوان 🎨' : file.color === 'mixed' ? 'غلاف ألوان 📑' : 'أبيض وأسود 📄'}</b></span> •
-                                  <span>الوجهين: <b>{file.sides === 'double' ? 'وجهين' : 'وجه واحد'}</b></span> •
-                                  <span>التغليف: <b>{file.binding === 'spiral_plastic' ? 'حلزوني' : file.binding === 'stapled' ? 'كبس' : file.binding === 'hardcover_leather' ? 'غلاف مقوى' : 'بدون'}</b></span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Customer Notes if present */}
-                      {order.notes && (
-                        <div className="bg-amber-50/80 border border-amber-200/80 p-2.5 rounded-xl text-xs text-amber-950 font-medium">
-                          <span className="font-bold">📝 ملاحظات العميل:</span> {order.notes}
-                        </div>
-                      )}
-
-                      {/* Trash Action Buttons */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
-                        <button
-                          type="button"
-                          onClick={() => setPrintOrderSlip(order)}
-                          className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-slate-700" />
-                          <span>معاينة إيصال الطلب 📄</span>
-                        </button>
-
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                           <button
                             type="button"
-                            onClick={() => handleRestoreOrderFromTrash(order)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs hover:scale-[1.02] active:scale-[0.98]"
+                            onClick={() => handleRestoreOrderFromTrash(deletedOrder)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>استرجاع الطلب إلى القائمة الحالية 🔄</span>
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>استرجاع الطلب 🔄</span>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => handlePermanentDeleteOrder(order.id, order.customerName)}
-                            className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                            onClick={() => handlePermanentDeleteOrder(deletedOrder.id, deletedOrder.customerName)}
+                            className="bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-bold px-3 py-2 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                            title="حذف نهائي لا يمكن التراجع عنه"
                           >
-                            <X className="w-3.5 h-3.5 text-rose-600" />
+                            <Trash2 className="w-3.5 h-3.5" />
                             <span>حذف نهائي ❌</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* UNIVERSITIES & ACADEMIC LEVELS MANAGEMENT TAB (إدارة الجامعات والكليات والمستويات والفصول الدراسية) */}
+      {activeTab === 'universities' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+            
+            {/* Top Sub-Tabs Selector */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
+              <div className="flex items-center gap-2 p-1 bg-slate-100/80 rounded-2xl border border-slate-200 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setUniSubSection('universities')}
+                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    uniSubSection === 'universities'
+                      ? 'bg-emerald-900 text-amber-300 shadow-md ring-2 ring-emerald-700'
+                      : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>🏛️ إدارة الجامعات والكليات ({universitiesList.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUniSubSection('degree_tracks')}
+                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    uniSubSection === 'degree_tracks'
+                      ? 'bg-emerald-900 text-amber-300 shadow-md ring-2 ring-emerald-700'
+                      : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>🎓 إدارة الدرجات العلمية (بكالوريوس ودبلوم)</span>
+                  <span className={`font-black text-[10px] px-2 py-0.5 rounded-full shadow-2xs ${
+                    degreeTracksList.filter(t => t.active !== false).length === degreeTracksList.length
+                      ? 'bg-emerald-400 text-slate-950'
+                      : 'bg-amber-400 text-slate-950'
+                  }`}>
+                    {degreeTracksList.filter(t => t.active !== false).length} / {degreeTracksList.length} متاح
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setUniSubSection('levels_semesters')}
+                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    uniSubSection === 'levels_semesters'
+                      ? 'bg-emerald-900 text-amber-300 shadow-md ring-2 ring-emerald-700'
+                      : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>📚 إدارة المستويات والفصول الدراسية (ON / OFF)</span>
+                  <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-2xs">
+                    {academicLevelsList.length} مستويات
+                  </span>
+                </button>
+              </div>
+
+              {uniSubSection === 'degree_tracks' && (
+                <button
+                  type="button"
+                  onClick={handleResetDegreeTracksDefault}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer"
+                  title="استعادة الحالة الافتراضية للدرجات العلمية (بكالوريوس ودبلوم)"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>إعادة ضبط افتراضي للدرجات العلمية</span>
+                </button>
+              )}
+
+              {uniSubSection === 'levels_semesters' && (
+                <button
+                  type="button"
+                  onClick={handleResetAcademicLevelsDefault}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer"
+                  title="استعادة الحالة الافتراضية للمستويات والفصول الدراسية"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>إعادة ضبط افتراضي للمستويات والفصول</span>
+                </button>
+              )}
+            </div>
+
+            {/* SECTION 1: UNIVERSITIES & COLLEGES VIEW */}
+            {uniSubSection === 'universities' && (
+              <div className="space-y-6">
+                {/* Header & Main Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs mb-1">
+                      <GraduationCap className="w-4 h-4 text-emerald-600" />
+                      <span>إدارة هيكل الجامعات السودانية • Direct Library Synchronization</span>
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                      <span>🏛️ إدارة الجامعات والكليات الأكاديمية</span>
+                      <span className="text-xs font-mono bg-emerald-100 text-emerald-950 px-3 py-1 rounded-full border border-emerald-300 font-bold">
+                        مربوطة تلقائياً مع المكتبة ⚡
+                      </span>
+                    </h3>
+                    <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                      إضافة، تعديل، أو حذف الجامعات والكليات والأقسام وتحديد المستويات الدراسية والتحكم في إتاحتها للطلاب (ON / OFF).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddUniModal()}
+                      className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>إضافة جامعة / كلية جديدة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetUniversitiesDefault}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer"
+                      title="استعادة القائمة الافتراضية للجامعات"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>إعادة ضبط افتراضي</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Summary Stats Bar */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
+                  <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                    <div className="p-2.5 bg-emerald-100 text-emerald-900 rounded-xl">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-500 block">عدد الجامعات المسجلة</span>
+                      <span className="text-xl font-black text-slate-900">{universitiesList.length} جامعة</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                    <div className="p-2.5 bg-amber-100 text-amber-900 rounded-xl">
+                      <GraduationCap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-500 block">إجمالي الكليات المعتمدة</span>
+                      <span className="text-xl font-black text-slate-900">
+                        {universitiesList.reduce((acc, u) => acc + (u.colleges?.length || 0), 0)} كلية
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-100 text-blue-900 rounded-xl">
+                      <FolderTree className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-500 block">إجمالي الأقسام والتخصصات</span>
+                      <span className="text-xl font-black text-slate-900">
+                        {universitiesList.reduce((acc, u) => acc + u.colleges.reduce((cAcc, c) => cAcc + (c.departments?.length || 0), 0), 0)} قسم
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Universities Cards Grid */}
+                <div className="space-y-6">
+                  {universitiesList.map((uni) => {
+                    const isUniActive = uni.active !== false;
+                    return (
+                      <div 
+                        key={uni.id}
+                        className={`border-2 rounded-2xl p-5 transition-all space-y-4 ${
+                          isUniActive
+                            ? 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
+                            : 'bg-slate-50/90 border-slate-300 opacity-60 shadow-none'
+                        }`}
+                      >
+                        {/* University Header Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border shadow-xs ${
+                              isUniActive ? 'bg-emerald-900 text-amber-300 border-emerald-700' : 'bg-slate-700 text-slate-300 border-slate-600'
+                            }`}>
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-lg font-black text-slate-900">{uni.name}</h4>
+                                <span className={`font-black text-[11px] px-2.5 py-0.5 rounded-full border ${
+                                  isUniActive 
+                                    ? 'bg-amber-100 text-amber-950 border-amber-300' 
+                                    : 'bg-rose-100 text-rose-900 border-rose-300'
+                                }`}>
+                                  {isUniActive ? (uni.badge || 'متاحة الآن ✓') : 'غير متاح الان'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5">{uni.description}</p>
+                            </div>
+                          </div>
+
+                          {/* Uni Action Buttons & ON/OFF Slider Switch */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            
+                            {/* ON / OFF Toggle Slider Button (زر سحاب اون/اوف) */}
+                            <div className={`flex items-center gap-2.5 p-1.5 px-3 rounded-2xl border transition-colors ${
+                              isUniActive 
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
+                                : 'bg-rose-50 border-rose-300 text-rose-950'
+                            }`}>
+                              <span className="text-xs font-black">
+                                {isUniActive ? 'متاحة (ON)' : 'غير متاح الان (OFF)'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleUniversityActive(uni.id)}
+                                className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                                  isUniActive ? 'bg-emerald-600' : 'bg-slate-400'
+                                }`}
+                                title={isUniActive ? 'تعطيل الجامعة (جعله غير متاح)' : 'تفعيل الجامعة (جعله متاح للطلاب)'}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                    isUniActive ? 'translate-x-0' : '-translate-x-6'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddUniModal(uni)}
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>إضافة كلية</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAddUniModal(uni, uni.colleges[0])}
+                              className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>تعديل</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUniversity(uni.id, uni.name)}
+                              className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
+                              title="حذف الجامعة"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>حذف</span>
+                            </button>
+                          </div>
+                        </div>
+
+                      {/* Colleges inside this university */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                        {uni.colleges.map((col) => {
+                          const isColActive = col.active !== false && isUniActive;
+                          return (
+                            <div 
+                              key={col.id} 
+                              className={`border rounded-xl p-3.5 flex flex-col justify-between space-y-3 transition-all ${
+                                isColActive
+                                  ? 'bg-slate-50/80 border-slate-200'
+                                  : 'bg-slate-100/90 border-slate-300 opacity-65'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                  <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                                    <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span>{col.name}</span>
+                                  </h5>
+                                  <div className="flex items-center gap-1 shrink-0 flex-wrap">
+                                    {col.degreeType === 'diploma' && (
+                                      <span className="bg-purple-100 text-purple-900 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                        📜 دبلوم
+                                      </span>
+                                    )}
+                                    {col.degreeType === 'both' && (
+                                      <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                        🎓📜 بكالوريوس + دبلوم
+                                      </span>
+                                    )}
+                                    {(col.degreeType === 'bachelor' || !col.degreeType) && (
+                                      <span className="bg-blue-100 text-blue-900 border border-blue-300 font-black text-[10px] px-2 py-0.5 rounded-full">
+                                        🎓 بكالوريوس
+                                      </span>
+                                    )}
+                                    <span className="bg-emerald-100 text-emerald-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
+                                      {col.levelsCount || 4} مستويات
+                                    </span>
+                                    <span className={`font-black text-[10px] px-2 py-0.5 rounded-full border ${
+                                      isColActive
+                                        ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                        : 'bg-rose-100 text-rose-900 border-rose-300'
+                                    }`}>
+                                      {isColActive ? 'متاحة ✓' : 'غير متاح الان'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {col.description && (
+                                  <p className="text-xs text-slate-600 line-clamp-2 mb-2">{col.description}</p>
+                                )}
+
+                                {/* Departments Tags */}
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {col.departments.map((dept, dIdx) => (
+                                    <span 
+                                      key={dIdx} 
+                                      className="bg-white text-slate-800 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-slate-200"
+                                    >
+                                      {dept.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* College Action Bar with ON/OFF Toggle Slider */}
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                                <span className="text-slate-500 font-bold text-[11px]">
+                                  {col.departments.length} أقسام تخصصية
+                                </span>
+
+                                <div className="flex items-center gap-2">
+                                  {/* ON / OFF Toggle Slider Button */}
+                                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-colors ${
+                                    isColActive
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                                      : 'bg-rose-50 border-rose-300 text-rose-950'
+                                  }`}>
+                                    <span className="text-[10px] font-black">
+                                      {isColActive ? 'متاحة (ON)' : 'غير متاح (OFF)'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleCollegeActive(uni.id, col.id, col.name)}
+                                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        isColActive ? 'bg-emerald-600' : 'bg-slate-400'
+                                      }`}
+                                      title={isColActive ? 'تعطيل الكلية (إيقاف)' : 'تفعيل الكلية (تشغيل)'}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                                          isColActive ? 'translate-x-0' : '-translate-x-5'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAddUniModal(uni, col)}
+                                    className="text-amber-800 hover:text-amber-950 hover:bg-amber-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>تعديل</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCollege(uni.id, col.id, col.name)}
+                                    className="text-rose-600 hover:text-rose-800 hover:bg-rose-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>حذف</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 2: ACADEMIC LEVELS & SEMESTERS ON/OFF MANAGEMENT VIEW */}
+          {uniSubSection === 'levels_semesters' && (
+            <div className="space-y-6">
+              {/* Header & Explanations */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs mb-1">
+                    <Layers className="w-4 h-4 text-emerald-600" />
+                    <span>التحكم المركزي في الفصول والمستويات الدراسية • Academic Levels & Semesters Control</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                    <span>📚 إدارة المستويات والفصول الدراسية (ON / OFF)</span>
+                    <span className="text-xs font-mono bg-emerald-100 text-emerald-950 px-3 py-1 rounded-full border border-emerald-300 font-bold">
+                      مربوطة مباشرة بالمكتبة ⚡
+                    </span>
+                  </h3>
+                  <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                    يمكنك تشغيل (ON) أو إيقاف (OFF) المستويات الدراسية بالكامل أو الفصول الدراسية الفرعية. عند إيقاف أي مستوى أو فصل لن يتمكن الطلاب من الدخول إليه في المكتبة وتظهر لهم رسالة إشعار إداري.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Summary Stats Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
+                <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-100 text-emerald-900 rounded-xl">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-500 block">إجمالي المستويات الأكاديمية</span>
+                    <span className="text-xl font-black text-slate-900">
+                      {academicLevelsList.length} مستويات (المتاح: {academicLevelsList.filter(l => l.active !== false).length})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-100 text-amber-900 rounded-xl">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-500 block">إجمالي الفصول الدراسية</span>
+                    <span className="text-xl font-black text-slate-900">
+                      {academicLevelsList.reduce((acc, l) => acc + l.semesters.length, 0)} فصول (المتاح: {academicLevelsList.reduce((acc, l) => acc + l.semesters.filter(s => s.active !== false && l.active !== false).length, 0)})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-100 text-blue-900 rounded-xl">
+                    <RefreshCw className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-500 block">سرعة التحديث والمزامنة</span>
+                    <span className="text-sm font-black text-emerald-700">تطبيق فوري لجميع الطلاب ⚡</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Levels & Semesters List */}
+              <div className="space-y-6">
+                {academicLevelsList.map((lvl) => {
+                  const isLvlActive = lvl.active !== false;
+                  return (
+                    <div 
+                      key={lvl.levelNum}
+                      className={`border-2 rounded-2xl p-5 sm:p-6 transition-all space-y-4 ${
+                        isLvlActive
+                          ? 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
+                          : 'bg-slate-50/90 border-rose-200 opacity-80 shadow-none'
+                      }`}
+                    >
+                      {/* Level Master Header Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-base shrink-0 border shadow-xs ${
+                            isLvlActive ? 'bg-emerald-900 text-amber-300 border-emerald-700' : 'bg-slate-700 text-slate-300 border-slate-600'
+                          }`}>
+                            <BookOpen className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-lg sm:text-xl font-black text-slate-900">{lvl.title}</h4>
+                              <span className="bg-slate-100 text-slate-700 font-bold text-xs px-2.5 py-0.5 rounded-full border border-slate-300">
+                                {lvl.yearLabel}
+                              </span>
+                              <span className={`font-black text-xs px-3 py-0.5 rounded-full border ${
+                                isLvlActive 
+                                  ? 'bg-emerald-100 text-emerald-950 border-emerald-300' 
+                                  : 'bg-rose-100 text-rose-900 border-rose-300'
+                              }`}>
+                                {isLvlActive ? 'المستوى متاح للطلاب ✓' : 'المستوى موقوف بالكامل 🚫'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">{lvl.description}</p>
+                          </div>
+                        </div>
+
+                        {/* Master Level ON/OFF Slider Button */}
+                        <div className={`flex items-center gap-3 p-2 px-4 rounded-2xl border transition-colors shadow-2xs ${
+                          isLvlActive 
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
+                            : 'bg-rose-50 border-rose-300 text-rose-950'
+                        }`}>
+                          <div className="text-right">
+                            <span className="text-xs font-black block">
+                              {isLvlActive ? 'المستوى متاح للطلاب (ON 🟢)' : 'المستوى موقوف للطلاب (OFF 🔴)'}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              {isLvlActive ? 'الطلاب يمكنهم الدخول' : 'يتم حجب المستوى بالكامل'}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleLevelActive(lvl.levelNum)}
+                            className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                              isLvlActive ? 'bg-emerald-600' : 'bg-slate-400'
+                            }`}
+                            title={isLvlActive ? 'تعطيل المستوى بالكامل' : 'تفعيل المستوى بالكامل'}
+                          >
+                            <span
+                              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                isLvlActive ? 'translate-x-0' : '-translate-x-7'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Inactive Level Notice Warning */}
+                      {!isLvlActive && (
+                        <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl flex items-center gap-2 text-rose-900 text-xs font-bold">
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>تنبيه: المستوى مغلق بالكامل حالياً. يتم حجب جميع الفصول الدراسية التابعة له ومنع الطلاب من فتحها تلقائياً.</span>
+                        </div>
+                      )}
+
+                      {/* Semesters inside this Level */}
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                          <span>الفصول الدراسية التابعة للمستوى ({lvl.semesters.length} فصول):</span>
+                          <span>التحكم المنفصل لكل فصل دراسي ON / OFF</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                          {lvl.semesters.map((sem) => {
+                            const isSemActive = sem.active !== false && isLvlActive;
+                            const isSemSelfActive = sem.active !== false;
+                            return (
+                              <div
+                                key={sem.id}
+                                className={`border rounded-xl p-4 flex flex-col justify-between space-y-3 transition-all ${
+                                  isSemActive
+                                    ? 'bg-slate-50/90 border-slate-200 shadow-2xs hover:border-emerald-300'
+                                    : 'bg-slate-100/90 border-slate-300 opacity-75'
+                                }`}
+                              >
+                                <div className="space-y-1.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-900 font-black text-xs flex items-center justify-center shrink-0">
+                                        {sem.id}
+                                      </span>
+                                      <h5 className="text-sm font-black text-slate-900">{sem.title}</h5>
+                                    </div>
+
+                                    <span className={`font-black text-[10px] px-2.5 py-0.5 rounded-full border ${
+                                      isSemActive
+                                        ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                        : 'bg-rose-100 text-rose-900 border-rose-300'
+                                    }`}>
+                                      {isSemActive ? 'الفصل متاح ✓' : !isLvlActive ? 'مغلق (المستوى معطل)' : 'الفصل مغلق 🚫'}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-xs text-slate-600 line-clamp-2 pr-8">{sem.desc || sem.title}</p>
+                                </div>
+
+                                {/* Semester Action Bar & ON/OFF Slider Switch */}
+                                <div className="flex items-center justify-between pt-2.5 border-t border-slate-200/70 text-xs">
+                                  <span className="text-[11px] font-bold text-slate-500">
+                                    {sem.label || sem.title}
+                                  </span>
+
+                                  {/* ON / OFF Toggle Slider Button */}
+                                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${
+                                    isSemSelfActive && isLvlActive
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                                      : 'bg-rose-50 border-rose-300 text-rose-950'
+                                  }`}>
+                                    <span className="text-[11px] font-black">
+                                      {isSemSelfActive ? 'متاح (ON)' : 'مغلق (OFF)'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSemesterActive(lvl.levelNum, sem.id, sem.title)}
+                                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        isSemSelfActive ? 'bg-emerald-600' : 'bg-slate-400'
+                                      }`}
+                                      title={isSemSelfActive ? `تعطيل (${sem.title})` : `تفعيل (${sem.title})`}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                                          isSemSelfActive ? 'translate-x-0' : '-translate-x-5'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 2: DEGREE TRACKS MANAGEMENT VIEW (إدارة الدرجات العلمية: بكالوريوس ودبلوم) */}
+          {uniSubSection === 'degree_tracks' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs mb-1">
+                    <GraduationCap className="w-4 h-4 text-emerald-600" />
+                    <span>التحكم في الدرجات العلمية • Direct Student Library Gatekeeper</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                    <span>🎓 إدارة مسارات الدرجات العلمية (بكالوريوس ودبلوم)</span>
+                    <span className="text-xs font-mono bg-emerald-100 text-emerald-950 px-3 py-1 rounded-full border border-emerald-300 font-bold">
+                      أون / أوف فوري للطلاب ⚡
+                    </span>
+                  </h3>
+                  <p className="text-slate-600 text-xs sm:text-sm mt-1">
+                    تحكم فوري في إتاحة أو إيقاف مساري <strong>البكالوريوس</strong> و<strong>الدبلوم</strong> لجميع الطلاب (ON / OFF). عند إيقاف أي مسار لن يتمكن الطالب من الدخول إليه من الواجهة والمكتبة.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleResetDegreeTracksDefault}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer shadow-xs"
+                    title="استعادة الحالة الافتراضية للدرجات العلمية"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>إعادة ضبط افتراضي</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Info & Notice Banner */}
+              <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl flex items-start gap-3">
+                <div className="p-2 bg-amber-200/80 text-amber-900 rounded-xl shrink-0 mt-0.5">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="space-y-1 text-xs text-amber-900">
+                  <span className="font-black text-sm block">💡 آلية عمل أزرار (ON / OFF) للدرجات العلمية:</span>
+                  <p className="leading-relaxed">
+                    • <strong>مسار البكالوريوس (Bachelor)</strong>: يشمل المستويات من 1 إلى 5 والفصول من 1 إلى 10. عند تشغيله (ON) يدخل الطالب للمستويات بكامل فصولها، وعند إيقافه (OFF) يُقفل المسار تماماً في وجه الطلاب.
+                  </p>
+                  <p className="leading-relaxed">
+                    • <strong>مسار الدبلوم (Diploma)</strong>: يشمل المستويين 1 و 2 والفصول من 1 إلى 4 للكليات التي تدعم الدبلوم التقني والوسيط. عند تشغيله (ON) يدخل الطالب، وعند إيقافه (OFF) يُقفل فوراً.
+                  </p>
+                </div>
+              </div>
+
+              {/* Degree Tracks Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {degreeTracksList.map(track => {
+                  const isBachelor = track.id === 'bachelor';
+                  const isTrackActive = track.active !== false;
+
+                  // Find colleges offering this track
+                  const offeringColleges = universitiesList.flatMap(u => 
+                    u.colleges.filter(c => {
+                      if (isBachelor) return !c.degreeType || c.degreeType === 'bachelor' || c.degreeType === 'both';
+                      return c.degreeType === 'diploma' || c.degreeType === 'both';
+                    }).map(c => ({ uniName: u.shortName || u.name, collegeName: c.name }))
+                  );
+
+                  return (
+                    <div
+                      key={track.id}
+                      className={`rounded-3xl border transition-all shadow-md overflow-hidden flex flex-col justify-between ${
+                        isTrackActive
+                          ? 'bg-white border-emerald-300 shadow-emerald-900/5 ring-1 ring-emerald-500/20'
+                          : 'bg-slate-50 border-rose-300 shadow-rose-900/5 ring-1 ring-rose-500/20 opacity-95'
+                      }`}
+                    >
+                      {/* Top Header & Toggle */}
+                      <div className={`p-6 border-b transition-colors ${
+                        isTrackActive ? 'bg-emerald-950 text-white' : 'bg-slate-900 text-slate-200'
+                      }`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-2xl">{isBachelor ? '🎓' : '📜'}</span>
+                              <h4 className="text-xl font-black text-amber-300">{track.name}</h4>
+                              <span className="text-xs font-mono text-slate-300">({track.englishName})</span>
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
+                              {track.description}
+                            </p>
+                          </div>
+
+                          {/* Big Master ON / OFF Toggle Switch */}
+                          <div className="flex flex-col items-center gap-1.5 shrink-0">
+                            <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                              isTrackActive
+                                ? 'bg-emerald-400 text-slate-950 shadow-xs animate-pulse'
+                                : 'bg-rose-500 text-white'
+                            }`}>
+                              {isTrackActive ? 'متاح للطلاب ON 🟢' : 'مغلق OFF 🔴'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDegreeTrack(track.id)}
+                              className={`relative inline-flex h-8 w-16 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner ${
+                                isTrackActive ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-600 hover:bg-rose-500'
+                              }`}
+                              title={isTrackActive ? `إيقاف مسار (${track.name}) ومنع الطلاب` : `تفعيل مسار (${track.name}) وإتاحته للطلاب`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out mt-0.5 ${
+                                  isTrackActive ? 'translate-x-1' : '-translate-x-8'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card Body Details */}
+                      <div className="p-6 space-y-5 flex-1 flex flex-col justify-between">
+                        <div className="space-y-4">
+                          {/* Scope & Levels Badges */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-slate-100 p-3 rounded-2xl border border-slate-200 text-center">
+                              <span className="text-[11px] font-bold text-slate-500 block">نطاق المستويات</span>
+                              <span className="text-sm font-black text-slate-900">
+                                {isBachelor ? '5 مستويات (المستوى 1 إلى 5)' : 'مستويان (المستوى 1 و 2)'}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-100 p-3 rounded-2xl border border-slate-200 text-center">
+                              <span className="text-[11px] font-bold text-slate-500 block">إجمالي الفصول</span>
+                              <span className="text-sm font-black text-slate-900">
+                                {isBachelor ? '10 فصول دراسية' : '4 فصول دراسية'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Live Student Status Indicator Box */}
+                          <div className={`p-3.5 rounded-2xl border flex items-center gap-3 ${
+                            isTrackActive
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                              : 'bg-rose-50 border-rose-200 text-rose-900'
+                          }`}>
+                            <div className={`w-3 h-3 rounded-full shrink-0 ${
+                              isTrackActive ? 'bg-emerald-500 shadow-xs' : 'bg-rose-500'
+                            }`} />
+                            <div className="text-xs leading-relaxed">
+                              <span className="font-black block">
+                                {isTrackActive ? '✓ حالة الطالب الحالية: مفتوح ومتاح' : '✕ حالة الطالب الحالية: محظور ومغلق'}
+                              </span>
+                              <span className="text-[11px] opacity-80">
+                                {isTrackActive
+                                  ? 'يمكن للطالب اختيار هذا المسار والتنقل بين المستويات والفصول وطباعة الشيتات.'
+                                  : 'تم إيقاف الدخول للمسار. عند محاولة الطالب النقر عليه تظهر رسالة تفيد بأنه غير متاح من الإدارة.'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Connected Colleges Preview */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs text-slate-600">
+                              <span className="font-bold flex items-center gap-1">
+                                <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>الكليات التي تقدم هذا المسار:</span>
+                              </span>
+                              <span className="font-bold font-mono bg-slate-200 px-2 py-0.5 rounded-full text-[11px]">
+                                {offeringColleges.length} كلية
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200 text-[11px]">
+                              {offeringColleges.slice(0, 8).map((c, idx) => (
+                                <span key={idx} className="bg-white px-2 py-1 rounded-lg border border-slate-200 text-slate-700 font-medium">
+                                  {c.collegeName}
+                                </span>
+                              ))}
+                              {offeringColleges.length > 8 && (
+                                <span className="bg-amber-100 text-amber-900 font-bold px-2 py-1 rounded-lg">
+                                  +{offeringColleges.length - 8} كليات أخرى
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Bottom Action Bar */}
+                        <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
+                          <span className="text-xs text-slate-500 font-mono">ID: {track.id}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleDegreeTrack(track.id)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isTrackActive
+                                ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-300'
+                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                            }`}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                            <span>{isTrackActive ? 'إيقاف هذا المسار (OFF)' : 'تفعيل هذا المسار (ON)'}</span>
                           </button>
                         </div>
                       </div>
                     </div>
                   );
                 })}
-
-                {deletedOrdersList.length === 0 && (
-                  <div className="text-center py-16 bg-slate-50/80 rounded-2xl border border-dashed border-slate-300 space-y-2">
-                    <Trash2 className="w-12 h-12 text-slate-300 mx-auto" />
-                    <p className="text-slate-700 font-black text-base">سلة المحذوفات فارغة حالياً 🎉</p>
-                    <p className="text-slate-500 text-xs">عند حذف أي طلب من قائمة الطلبات، سيتم إرساله هنا مؤقتاً لمدة 30 يوماً لتتمكن من استرجاعه في أي وقت.</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
+
+          </div>
         </div>
       )}
 
-      {/* UNIVERSITIES MANAGEMENT TAB (إدارة الجامعات والكليات الربط المباشر بالمكتبة) */}
-      {activeTab === 'universities' && (
-        <div className="space-y-6">
-          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
-            
-            {/* Header & Main Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
-              <div>
-                <div className="flex items-center gap-2 text-emerald-700 font-bold text-xs mb-1">
-                  <GraduationCap className="w-4 h-4 text-emerald-600" />
-                  <span>إدارة هيكل الجامعات السودانية • Direct Library Synchronization</span>
-                </div>
-                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                  <span>🏛️ إدارة الجامعات والكليات الأكاديمية</span>
-                  <span className="text-xs font-mono bg-emerald-100 text-emerald-950 px-3 py-1 rounded-full border border-emerald-300 font-bold">
-                    مربوطة تلقائياً مع المكتبة ⚡
-                  </span>
-                </h3>
-                <p className="text-slate-600 text-xs sm:text-sm mt-1">
-                  إضافة، تعديل، أو حذف الجامعات والكليات والأقسام وتحديد المستويات الدراسية مع تحديث المكتبة العامة فوراً.
-                </p>
-              </div>
+      {/* ANALYTICS & VISITORS DASHBOARD TAB */}
+      {activeTab === 'analytics' && (
+        <AnalyticsDashboardView
+          orders={orders}
+          sheets={sheets}
+          onRefresh={onRefreshOrders}
+        />
+      )}
 
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => handleOpenAddUniModal()}
-                  className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-2.5 rounded-2xl text-xs sm:text-sm inline-flex items-center gap-2 transition-all shadow-md cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>إضافة جامعة / كلية جديدة</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleResetUniversitiesDefault}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-2xl text-xs inline-flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer"
-                  title="استعادة القائمة الافتراضية للجامعات"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>إعادة ضبط افتراضي</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Summary Stats Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 bg-emerald-50/60 p-4 rounded-2xl border border-emerald-200/80">
-              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-100 text-emerald-900 rounded-xl">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-slate-500 block">عدد الجامعات المسجلة</span>
-                  <span className="text-xl font-black text-slate-900">{universitiesList.length} جامعة</span>
-                </div>
-              </div>
-
-              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
-                <div className="p-2.5 bg-amber-100 text-amber-900 rounded-xl">
-                  <GraduationCap className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-slate-500 block">إجمالي الكليات المعتمدة</span>
-                  <span className="text-xl font-black text-slate-900">
-                    {universitiesList.reduce((acc, u) => acc + (u.colleges?.length || 0), 0)} كلية
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white p-3.5 rounded-xl border border-emerald-200 flex items-center gap-3">
-                <div className="p-2.5 bg-blue-100 text-blue-900 rounded-xl">
-                  <FolderTree className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-slate-500 block">إجمالي الأقسام والتخصصات</span>
-                  <span className="text-xl font-black text-slate-900">
-                    {universitiesList.reduce((acc, u) => acc + u.colleges.reduce((cAcc, c) => cAcc + (c.departments?.length || 0), 0), 0)} قسم
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Universities Cards Grid */}
-            <div className="space-y-6">
-              {universitiesList.map((uni) => {
-                const isUniActive = uni.active !== false;
-                return (
-                  <div 
-                    key={uni.id}
-                    className={`border-2 rounded-2xl p-5 transition-all space-y-4 ${
-                      isUniActive
-                        ? 'bg-white border-slate-200 shadow-2xs hover:border-emerald-300'
-                        : 'bg-slate-50/90 border-slate-300 opacity-60 shadow-none'
-                    }`}
-                  >
-                    {/* University Header Row */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border shadow-xs ${
-                          isUniActive ? 'bg-emerald-900 text-amber-300 border-emerald-700' : 'bg-slate-700 text-slate-300 border-slate-600'
-                        }`}>
-                          <Building2 className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-lg font-black text-slate-900">{uni.name}</h4>
-                            <span className={`font-black text-[11px] px-2.5 py-0.5 rounded-full border ${
-                              isUniActive 
-                                ? 'bg-amber-100 text-amber-950 border-amber-300' 
-                                : 'bg-rose-100 text-rose-900 border-rose-300'
-                            }`}>
-                              {isUniActive ? (uni.badge || 'متاحة الآن ✓') : 'غير متاح الان'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-0.5">{uni.description}</p>
-                        </div>
-                      </div>
-
-                      {/* Uni Action Buttons & ON/OFF Slider Switch */}
-                      <div className="flex items-center gap-3 flex-wrap">
-                        
-                        {/* ON / OFF Toggle Slider Button (زر سحاب اون/اوف) */}
-                        <div className={`flex items-center gap-2.5 p-1.5 px-3 rounded-2xl border transition-colors ${
-                          isUniActive 
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
-                            : 'bg-rose-50 border-rose-300 text-rose-950'
-                        }`}>
-                          <span className="text-xs font-black">
-                            {isUniActive ? 'متاحة (ON)' : 'غير متاح الان (OFF)'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleUniversityActive(uni.id)}
-                            className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                              isUniActive ? 'bg-emerald-600' : 'bg-slate-400'
-                            }`}
-                            title={isUniActive ? 'تعطيل الجامعة (جعله غير متاح)' : 'تفعيل الجامعة (جعله متاح للطلاب)'}
-                          >
-                            <span
-                              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                isUniActive ? 'translate-x-0' : '-translate-x-6'
-                              }`}
-                            />
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAddUniModal(uni)}
-                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>إضافة كلية</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenAddUniModal(uni, uni.colleges[0])}
-                          className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          <span>تعديل</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUniversity(uni.id, uni.name)}
-                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3 py-1.5 rounded-xl text-xs inline-flex items-center gap-1 transition-all cursor-pointer"
-                          title="حذف الجامعة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>حذف</span>
-                        </button>
-                      </div>
-                    </div>
-
-                  {/* Colleges inside this university */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                    {uni.colleges.map((col) => {
-                      const isColActive = col.active !== false && isUniActive;
-                      return (
-                        <div 
-                          key={col.id} 
-                          className={`border rounded-xl p-3.5 flex flex-col justify-between space-y-3 transition-all ${
-                            isColActive
-                              ? 'bg-slate-50/80 border-slate-200'
-                              : 'bg-slate-100/90 border-slate-300 opacity-65'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2 mb-1.5">
-                              <h5 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                                <GraduationCap className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span>{col.name}</span>
-                              </h5>
-                              <div className="flex items-center gap-1 shrink-0 flex-wrap">
-                                {col.degreeType === 'diploma' && (
-                                  <span className="bg-purple-100 text-purple-900 border border-purple-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                    📜 دبلوم
-                                  </span>
-                                )}
-                                {col.degreeType === 'both' && (
-                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                    🎓📜 بكالوريوس + دبلوم
-                                  </span>
-                                )}
-                                {(col.degreeType === 'bachelor' || !col.degreeType) && (
-                                  <span className="bg-blue-100 text-blue-900 border border-blue-300 font-black text-[10px] px-2 py-0.5 rounded-full">
-                                    🎓 بكالوريوس
-                                  </span>
-                                )}
-                                <span className="bg-emerald-100 text-emerald-950 font-bold text-[10px] px-2 py-0.5 rounded-full">
-                                  {col.levelsCount || 4} مستويات
-                                </span>
-                                <span className={`font-black text-[10px] px-2 py-0.5 rounded-full border ${
-                                  isColActive
-                                    ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
-                                    : 'bg-rose-100 text-rose-900 border-rose-300'
-                                }`}>
-                                  {isColActive ? 'متاحة ✓' : 'غير متاح الان'}
-                                </span>
-                              </div>
-                            </div>
-                            {col.description && (
-                              <p className="text-xs text-slate-600 line-clamp-2 mb-2">{col.description}</p>
-                            )}
-
-                            {/* Departments Tags */}
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {col.departments.map((dept, dIdx) => (
-                                <span 
-                                  key={dIdx} 
-                                  className="bg-white text-slate-800 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-slate-200"
-                                >
-                                  {dept.name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* College Action Bar with ON/OFF Toggle Slider */}
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                            <span className="text-slate-500 font-bold text-[11px]">
-                              {col.departments.length} أقسام تخصصية
-                            </span>
-
-                            <div className="flex items-center gap-2">
-                              {/* ON / OFF Toggle Slider Button */}
-                              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-colors ${
-                                isColActive
-                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                                  : 'bg-rose-50 border-rose-300 text-rose-950'
-                              }`}>
-                                <span className="text-[10px] font-black">
-                                  {isColActive ? 'متاحة (ON)' : 'غير متاح (OFF)'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCollegeActive(uni.id, col.id, col.name)}
-                                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                    isColActive ? 'bg-emerald-600' : 'bg-slate-400'
-                                  }`}
-                                  title={isColActive ? 'تعطيل الكلية (إيقاف)' : 'تفعيل الكلية (تشغيل)'}
-                                >
-                                  <span
-                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
-                                      isColActive ? 'translate-x-0' : '-translate-x-5'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAddUniModal(uni, col)}
-                                className="text-amber-800 hover:text-amber-950 hover:bg-amber-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
-                              >
-                                <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                                <span>تعديل</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteCollege(uni.id, col.id, col.name)}
-                                className="text-rose-600 hover:text-rose-800 hover:bg-rose-100/70 p-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 text-[11px]"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>حذف</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                </div>
-              );
-            })}
-          </div>
-
-          </div>
-        </div>
+      {/* DELIVERY MANAGEMENT TAB */}
+      {activeTab === 'delivery' && (
+        <DeliveryManagementView
+          deliveryZones={deliveryZones}
+          onUpdateZones={(newZones) => {
+            setDeliveryZones(newZones);
+            saveStoredDeliveryZones(newZones);
+            triggerToast('تم تحديث وحفظ بيانات وأسعار مناطق التوصيل بنجاح 🚚');
+          }}
+          onResetZones={() => {
+            const defaults = DEFAULT_ENRICHED_DELIVERY_ZONES;
+            setDeliveryZones(defaults);
+            saveStoredDeliveryZones(defaults);
+            triggerToast('تمت استعادة القائمة الافتراضية الشاملة لمناطق التوصيل');
+          }}
+        />
       )}
 
       {/* MODAL DIALOG: ADD/EDIT UNIVERSITY & COLLEGE */}

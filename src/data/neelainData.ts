@@ -398,16 +398,35 @@ export const SUDAN_UNIVERSITIES: UniversityInfo[] = [
   },
 ];
 
-export const ACADEMIC_LEVELS = [
+export interface AcademicSemester {
+  id: number;
+  title: string;
+  label: string;
+  desc: string;
+  active?: boolean;
+}
+
+export interface AcademicLevel {
+  levelNum: number;
+  title: string;
+  yearLabel: string;
+  description: string;
+  badge: string;
+  active?: boolean;
+  semesters: AcademicSemester[];
+}
+
+export const ACADEMIC_LEVELS: AcademicLevel[] = [
   {
     levelNum: 1,
     title: 'المستوى الأول',
     yearLabel: 'السنة الأولى',
     description: 'يحتوي على الفصل الدراسي الأول والفصل الدراسي الثاني',
     badge: 'المستوى 1',
+    active: true,
     semesters: [
-      { id: 1, title: 'الفصل الدراسي الأول', label: 'الفصل 1', desc: 'المواد والمقررات الدراسية للفصل الأول' },
-      { id: 2, title: 'الفصل الدراسي الثاني', label: 'الفصل 2', desc: 'المواد والمقررات الدراسية للفصل الثاني' },
+      { id: 1, title: 'الفصل الدراسي الأول', label: 'الفصل 1', desc: 'المواد والمقررات الدراسية للفصل الأول', active: true },
+      { id: 2, title: 'الفصل الدراسي الثاني', label: 'الفصل 2', desc: 'المواد والمقررات الدراسية للفصل الثاني', active: true },
     ],
   },
   {
@@ -416,9 +435,10 @@ export const ACADEMIC_LEVELS = [
     yearLabel: 'السنة الثانية',
     description: 'يحتوي على الفصل الدراسي الثالث والفصل الدراسي الرابع',
     badge: 'المستوى 2',
+    active: true,
     semesters: [
-      { id: 3, title: 'الفصل الدراسي الثالث', label: 'الفصل 3', desc: 'المواد والمقررات الدراسية للفصل الثالث' },
-      { id: 4, title: 'الفصل الدراسي الرابع', label: 'الفصل 4', desc: 'المواد والمقررات الدراسية للفصل الرابع' },
+      { id: 3, title: 'الفصل الدراسي الثالث', label: 'الفصل 3', desc: 'المواد والمقررات الدراسية للفصل الثالث', active: true },
+      { id: 4, title: 'الفصل الدراسي الرابع', label: 'الفصل 4', desc: 'المواد والمقررات الدراسية للفصل الرابع', active: true },
     ],
   },
   {
@@ -427,9 +447,10 @@ export const ACADEMIC_LEVELS = [
     yearLabel: 'السنة الثالثة',
     description: 'يحتوي على الفصل الدراسي الخامس والفصل الدراسي السادس',
     badge: 'المستوى 3',
+    active: true,
     semesters: [
-      { id: 5, title: 'الفصل الدراسي الخامس', label: 'الفصل 5', desc: 'المواد والمقررات الدراسية للفصل الخامس' },
-      { id: 6, title: 'الفصل الدراسي السادس', label: 'الفصل 6', desc: 'المواد والمقررات الدراسية للفصل السادس' },
+      { id: 5, title: 'الفصل الدراسي الخامس', label: 'الفصل 5', desc: 'المواد والمقررات الدراسية للفصل الخامس', active: true },
+      { id: 6, title: 'الفصل الدراسي السادس', label: 'الفصل 6', desc: 'المواد والمقررات الدراسية للفصل السادس', active: true },
     ],
   },
   {
@@ -438,9 +459,10 @@ export const ACADEMIC_LEVELS = [
     yearLabel: 'السنة الرابعة (سنة التخرج)',
     description: 'يحتوي على الفصل الدراسي السابع والفصل الدراسي الثامن',
     badge: 'المستوى 4',
+    active: true,
     semesters: [
-      { id: 7, title: 'الفصل الدراسي السابع', label: 'الفصل 7', desc: 'المواد والمقررات الدراسية للفصل السابع' },
-      { id: 8, title: 'الفصل الدراسي الثامن', label: 'الفصل 8', desc: 'المواد والمقررات الدراسية للفصل الثامن (التخرج)' },
+      { id: 7, title: 'الفصل الدراسي السابع', label: 'الفصل 7', desc: 'المواد والمقررات الدراسية للفصل السابع', active: true },
+      { id: 8, title: 'الفصل الدراسي الثامن', label: 'الفصل 8', desc: 'المواد والمقررات الدراسية للفصل الثامن (التخرج)', active: true },
     ],
   },
   {
@@ -449,12 +471,64 @@ export const ACADEMIC_LEVELS = [
     yearLabel: 'السنة الخامسة (بكالوريوس الشرف / التخصصات الممتدة)',
     description: 'يحتوي على الفصل الدراسي التاسع والفصل الدراسي العاشر',
     badge: 'المستوى 5',
+    active: true,
     semesters: [
-      { id: 9, title: 'الفصل الدراسي التاسع', label: 'الفصل 9', desc: 'المواد والمقررات الدراسية للفصل التاسع' },
-      { id: 10, title: 'الفصل الدراسي العاشر', label: 'الفصل 10', desc: 'المواد والمقررات الدراسية للفصل العاشر (مشاريع التخرج)' },
+      { id: 9, title: 'الفصل الدراسي التاسع', label: 'الفصل 9', desc: 'المواد والمقررات الدراسية للفصل التاسع', active: true },
+      { id: 10, title: 'الفصل الدراسي العاشر', label: 'الفصل 10', desc: 'المواد والمقررات الدراسية للفصل العاشر (مشاريع التخرج)', active: true },
     ],
   },
 ];
+
+export const getStoredAcademicLevels = (): AcademicLevel[] => {
+  try {
+    const raw = localStorage.getItem('a4_academic_levels_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored academic levels:', e);
+  }
+  return ACADEMIC_LEVELS;
+};
+
+export const saveStoredAcademicLevels = (levels: AcademicLevel[]): void => {
+  try {
+    localStorage.setItem('a4_academic_levels_data', JSON.stringify(levels));
+    window.dispatchEvent(new CustomEvent('a4_academic_levels_updated', { detail: levels }));
+
+    // 1. Cross-tab instant broadcast
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_academic_levels_channel');
+        bc.postMessage({ type: 'ACADEMIC_LEVELS_UPDATED', list: levels });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/academic-levels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(levels),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof fb.saveAcademicLevelsToCloud === 'function') {
+          fb.saveAcademicLevelsToCloud(levels).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    console.error('Error saving stored academic levels:', e);
+  }
+};
 
 export const getStoredUniversities = (): UniversityInfo[] => {
   try {
@@ -471,10 +545,116 @@ export const getStoredUniversities = (): UniversityInfo[] => {
   return SUDAN_UNIVERSITIES;
 };
 
+export interface DegreeTrackInfo {
+  id: 'bachelor' | 'diploma';
+  name: string;
+  badge: string;
+  description: string;
+  levelsCountDesc: string;
+  active: boolean;
+}
+
+export const DEFAULT_DEGREE_TRACKS: DegreeTrackInfo[] = [
+  {
+    id: 'bachelor',
+    name: 'بكالوريوس',
+    badge: '🎓 مسار البكالوريوس',
+    description: 'المستويات من الأول حتى الرابع / الخامس (بكالوريوس الشرف والدراسات الممتدة)',
+    levelsCountDesc: '4 - 5 مستويات دراسية معتمدة (حتى 10 فصول)',
+    active: true,
+  },
+  {
+    id: 'diploma',
+    name: 'دبلوم',
+    badge: '📜 مسار الدبلوم التقني',
+    description: 'المستويات الأول والثاني (برامج الدبلوم التقني والتطبيقي)',
+    levelsCountDesc: 'مستويان دراسيان معتمدان (4 فصول دراسية)',
+    active: true,
+  },
+];
+
+export const getStoredDegreeTracks = (): DegreeTrackInfo[] => {
+  try {
+    const raw = localStorage.getItem('a4_degree_tracks_data');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading stored degree tracks:', e);
+  }
+  return DEFAULT_DEGREE_TRACKS;
+};
+
+export const saveStoredDegreeTracks = (tracks: DegreeTrackInfo[]): void => {
+  try {
+    localStorage.setItem('a4_degree_tracks_data', JSON.stringify(tracks));
+    window.dispatchEvent(new CustomEvent('a4_degree_tracks_updated', { detail: tracks }));
+
+    // 1. Broadcast channel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_degree_tracks_channel');
+        bc.postMessage({ type: 'DEGREE_TRACKS_UPDATED', list: tracks });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/degree-tracks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tracks),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof (fb as any).saveDegreeTracksToCloud === 'function') {
+          (fb as any).saveDegreeTracksToCloud(tracks).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  } catch (e) {
+    console.error('Error saving stored degree tracks:', e);
+  }
+};
+
 export const saveStoredUniversities = (unis: UniversityInfo[]): void => {
   try {
     localStorage.setItem('a4_universities_data', JSON.stringify(unis));
     window.dispatchEvent(new CustomEvent('a4_universities_updated', { detail: unis }));
+
+    // 1. Cross-tab instant broadcast
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_universities_channel');
+        bc.postMessage({ type: 'UNIVERSITIES_UPDATED', list: unis });
+        bc.close();
+      } catch (e) {}
+    }
+
+    // 2. Server API persistence
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/universities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(unis),
+      }).catch(() => {});
+    }
+
+    // 3. Firebase Cloud Firestore persistence (global across all devices & browsers)
+    import('../lib/firebase')
+      .then(fb => {
+        if (fb && typeof fb.saveUniversitiesToCloud === 'function') {
+          fb.saveUniversitiesToCloud(unis).catch(() => {});
+        }
+      })
+      .catch(() => {});
   } catch (e) {
     console.error('Error saving stored universities:', e);
   }

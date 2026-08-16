@@ -22,6 +22,7 @@ import {
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
 import { PrintOrder, StudySheet } from '../types';
+import { UniversityInfo, AcademicLevel } from '../data/neelainData';
 
 // إعدادات Firebase المباشرة لمشروعك a4-sudan
 const firebaseConfig = {
@@ -350,6 +351,79 @@ export async function updateOrderInCloud(orderId: string, updates: Partial<Print
 }
 
 /**
+ * Deleted IDs Tombstones Collection (Guarantees deletion across all browsers & devices)
+ */
+const DELETED_IDS_COLLECTION = 'deleted_order_ids';
+
+export async function recordDeletedOrderIdInCloud(orderId: string): Promise<boolean> {
+  try {
+    if (!orderId) return false;
+    const lowerId = orderId.toLowerCase();
+    const docRef = doc(db, DELETED_IDS_COLLECTION, lowerId);
+    await setDoc(docRef, { id: lowerId, originalId: orderId, deletedAt: new Date().toISOString() }, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn('Firestore record deleted ID warning:', e);
+    return false;
+  }
+}
+
+export async function removeDeletedOrderIdFromCloud(orderId: string): Promise<boolean> {
+  try {
+    if (!orderId) return false;
+    const lowerId = orderId.toLowerCase();
+    const docRef = doc(db, DELETED_IDS_COLLECTION, lowerId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (e) {
+    console.warn('Firestore remove deleted ID warning:', e);
+    return false;
+  }
+}
+
+export async function getDeletedIdsFromCloud(): Promise<string[]> {
+  try {
+    const ref = collection(db, DELETED_IDS_COLLECTION);
+    const snapshot = await getDocs(ref);
+    const ids: string[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data?.id) ids.push(data.id.toLowerCase());
+      else ids.push(docSnap.id.toLowerCase());
+    });
+    return ids;
+  } catch (e) {
+    console.warn('Error fetching deleted IDs from cloud:', e);
+    return [];
+  }
+}
+
+export function subscribeToDeletedIds(callback: (deletedIds: string[]) => void): () => void {
+  try {
+    const ref = collection(db, DELETED_IDS_COLLECTION);
+    const q = query(ref);
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const ids: string[] = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data?.id) ids.push(data.id.toLowerCase());
+          else ids.push(docSnap.id.toLowerCase());
+        });
+        callback(ids);
+      },
+      (error) => {
+        console.warn('Firestore deleted_order_ids listener warning:', error);
+      }
+    );
+  } catch (e) {
+    console.warn('Firestore deleted_order_ids subscribe warning:', e);
+    return () => {};
+  }
+}
+
+/**
  * Deletes an order from Firestore
  */
 export async function deleteOrderFromCloud(orderId: string): Promise<boolean> {
@@ -357,6 +431,16 @@ export async function deleteOrderFromCloud(orderId: string): Promise<boolean> {
     if (!orderId) return false;
     const docRef = doc(db, ORDERS_COLLECTION, orderId);
     await deleteDoc(docRef);
+    await recordDeletedOrderIdInCloud(orderId);
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'ORDER_DELETED', orderId });
+        bc.close();
+      } catch (e) {}
+    }
     return true;
   } catch (error) {
     console.warn('Firestore delete order warning:', error);
@@ -406,6 +490,22 @@ export async function saveDeletedOrderToCloud(order: PrintOrder): Promise<boolea
     const cleanOrder = deepCleanForFirestore(order);
     const docRef = doc(db, DELETED_ORDERS_COLLECTION, order.id);
     await setDoc(docRef, { ...cleanOrder, deletedAt: order.deletedAt || new Date().toISOString() }, { merge: true });
+
+    // Ensure removed from active orders collection
+    const activeDocRef = doc(db, ORDERS_COLLECTION, order.id);
+    await deleteDoc(activeDocRef);
+
+    // Record tombstone
+    await recordDeletedOrderIdInCloud(order.id);
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'ORDER_MOVED_TO_TRASH', orderId: order.id });
+        bc.close();
+      } catch (e) {}
+    }
     return true;
   } catch (error) {
     console.warn('Firestore save deleted order warning:', error);
@@ -418,9 +518,75 @@ export async function deleteDeletedOrderFromCloud(orderId: string): Promise<bool
     if (!orderId) return false;
     const docRef = doc(db, DELETED_ORDERS_COLLECTION, orderId);
     await deleteDoc(docRef);
+    await recordDeletedOrderIdInCloud(orderId);
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'ORDER_PERMANENTLY_DELETED', orderId });
+        bc.close();
+      } catch (e) {}
+    }
     return true;
   } catch (error) {
     console.warn('Firestore delete deleted order warning:', error);
+    return false;
+  }
+}
+
+export async function emptyDeletedOrdersInCloud(): Promise<boolean> {
+  try {
+    const ref = collection(db, DELETED_ORDERS_COLLECTION);
+    const snapshot = await getDocs(ref);
+    const promises: Promise<any>[] = [];
+    snapshot.forEach(docSnap => {
+      promises.push(deleteDoc(docSnap.ref));
+      promises.push(recordDeletedOrderIdInCloud(docSnap.id));
+    });
+    await Promise.all(promises);
+
+    // Broadcast across windows / tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'TRASH_EMPTIED' });
+        bc.close();
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.warn('Firestore empty trash warning:', e);
+    return false;
+  }
+}
+
+export async function restoreOrderInCloud(order: PrintOrder): Promise<boolean> {
+  try {
+    if (!order || !order.id) return false;
+    // 1. Remove from deleted_orders
+    const trashDocRef = doc(db, DELETED_ORDERS_COLLECTION, order.id);
+    await deleteDoc(trashDocRef);
+
+    // 2. Remove from tombstone
+    await removeDeletedOrderIdFromCloud(order.id);
+
+    // 3. Save to active orders
+    const restoredOrder = { ...order };
+    delete restoredOrder.deletedAt;
+    await saveOrderToCloud(restoredOrder);
+
+    // Broadcast
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_orders_channel');
+        bc.postMessage({ type: 'ORDER_RESTORED', orderId: order.id });
+        bc.close();
+      } catch (e) {}
+    }
+    return true;
+  } catch (e) {
+    console.warn('Firestore restore order warning:', e);
     return false;
   }
 }
@@ -490,9 +656,51 @@ export async function deleteSheetFromCloud(sheetId: string): Promise<boolean> {
     if (!sheetId) return false;
     const docRef = doc(db, SHEETS_COLLECTION, sheetId);
     await deleteDoc(docRef);
+    await recordDeletedSheetIdInCloud(sheetId);
     return true;
   } catch (error) {
     console.warn('Firestore delete sheet warning:', error);
+    return false;
+  }
+}
+
+export async function recordDeletedSheetIdInCloud(sheetId: string): Promise<boolean> {
+  try {
+    if (!sheetId) return false;
+    const tombstoneRef = doc(db, 'deleted_sheet_ids', sheetId.toLowerCase());
+    await setDoc(tombstoneRef, {
+      sheetId: sheetId.toLowerCase(),
+      deletedAt: new Date().toISOString()
+    }, { merge: true });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function getDeletedSheetIdsFromCloud(): Promise<string[]> {
+  try {
+    const colRef = collection(db, 'deleted_sheet_ids');
+    const snap = await getDocs(colRef);
+    const ids: string[] = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data && data.sheetId) ids.push(data.sheetId.toLowerCase());
+    });
+    return ids;
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function batchSaveSheetsToCloud(sheets: StudySheet[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(sheets) || sheets.length === 0) return false;
+    const promises = sheets.map(s => saveSheetToCloud(s));
+    await Promise.allSettled(promises);
+    return true;
+  } catch (e) {
+    console.error('Batch save sheets error:', e);
     return false;
   }
 }
@@ -541,5 +749,231 @@ export function subscribeToCloudSheets(callback: (sheets: StudySheet[]) => void)
     return () => {};
   }
 }
+
+/**
+ * Universities & Colleges Global Firestore Integration
+ * Synchronizes active/inactive states across all devices & browsers in real time.
+ */
+const UNIVERSITIES_COLLECTION = 'system_settings';
+const UNIVERSITIES_DOC_ID = 'universities_config';
+
+export async function saveUniversitiesToCloud(universities: UniversityInfo[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(universities) || universities.length === 0) return false;
+    const cleanList = universities.map(u => deepCleanForFirestore(u));
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, UNIVERSITIES_DOC_ID);
+    await setDoc(docRef, {
+      list: cleanList,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Broadcast across local browser tabs immediately
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_universities_channel');
+        bc.postMessage({ type: 'UNIVERSITIES_UPDATED', list: universities });
+        bc.close();
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save universities error:', error);
+    return false;
+  }
+}
+
+export async function getUniversitiesFromCloud(): Promise<UniversityInfo[] | null> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, UNIVERSITIES_DOC_ID);
+    const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
+    let foundList: UniversityInfo[] | null = null;
+    docSnap.forEach((d) => {
+      if (d.id === UNIVERSITIES_DOC_ID) {
+        const data = d.data();
+        if (data && Array.isArray(data.list) && data.list.length > 0) {
+          foundList = data.list as UniversityInfo[];
+        }
+      }
+    });
+    return foundList;
+  } catch (error) {
+    console.warn('Error fetching universities from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudUniversities(callback: (unis: UniversityInfo[]) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, UNIVERSITIES_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.list) && data.list.length > 0) {
+            callback(data.list as UniversityInfo[]);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore universities listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore universities subscribe warning:', error);
+    return () => {};
+  }
+}
+
+/**
+ * Academic Levels & Semesters Global Firestore Integration
+ * Synchronizes ON/OFF availability states for levels and semesters across all devices & browsers.
+ */
+const ACADEMIC_LEVELS_DOC_ID = 'academic_levels_config';
+
+export async function saveAcademicLevelsToCloud(levels: AcademicLevel[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(levels) || levels.length === 0) return false;
+    const cleanList = levels.map(l => deepCleanForFirestore(l));
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, ACADEMIC_LEVELS_DOC_ID);
+    await setDoc(docRef, {
+      list: cleanList,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Broadcast across local browser tabs immediately
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_academic_levels_channel');
+        bc.postMessage({ type: 'ACADEMIC_LEVELS_UPDATED', list: levels });
+        bc.close();
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save academic levels error:', error);
+    return false;
+  }
+}
+
+export async function getAcademicLevelsFromCloud(): Promise<AcademicLevel[] | null> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, ACADEMIC_LEVELS_DOC_ID);
+    const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
+    let foundList: AcademicLevel[] | null = null;
+    docSnap.forEach((d) => {
+      if (d.id === ACADEMIC_LEVELS_DOC_ID) {
+        const data = d.data();
+        if (data && Array.isArray(data.list) && data.list.length > 0) {
+          foundList = data.list as AcademicLevel[];
+        }
+      }
+    });
+    return foundList;
+  } catch (error) {
+    console.warn('Error fetching academic levels from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudAcademicLevels(callback: (levels: AcademicLevel[]) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, ACADEMIC_LEVELS_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.list) && data.list.length > 0) {
+            callback(data.list as AcademicLevel[]);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore academic levels listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore academic levels subscribe warning:', error);
+    return () => {};
+  }
+}
+
+/**
+ * Degree Tracks (Bachelor / Diploma) Global Firestore Integration
+ * Synchronizes ON/OFF availability states for degree tracks across all devices & browsers.
+ */
+const DEGREE_TRACKS_DOC_ID = 'degree_tracks_config';
+
+export async function saveDegreeTracksToCloud(tracks: any[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(tracks) || tracks.length === 0) return false;
+    const cleanList = tracks.map(t => deepCleanForFirestore(t));
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DEGREE_TRACKS_DOC_ID);
+    await setDoc(docRef, {
+      list: cleanList,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Broadcast across local browser tabs immediately
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_degree_tracks_channel');
+        bc.postMessage({ type: 'DEGREE_TRACKS_UPDATED', list: tracks });
+        bc.close();
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save degree tracks error:', error);
+    return false;
+  }
+}
+
+export async function getDegreeTracksFromCloud(): Promise<any[] | null> {
+  try {
+    const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
+    let foundList: any[] | null = null;
+    docSnap.forEach((d) => {
+      if (d.id === DEGREE_TRACKS_DOC_ID) {
+        const data = d.data();
+        if (data && Array.isArray(data.list) && data.list.length > 0) {
+          foundList = data.list;
+        }
+      }
+    });
+    return foundList;
+  } catch (error) {
+    console.warn('Error fetching degree tracks from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudDegreeTracks(callback: (tracks: any[]) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DEGREE_TRACKS_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.list) && data.list.length > 0) {
+            callback(data.list);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore degree tracks listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore degree tracks subscribe warning:', error);
+    return () => {};
+  }
+}
+
 
 

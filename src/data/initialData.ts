@@ -979,9 +979,9 @@ export function saveStoredExpenses(expenses: Expense[]): void {
 export function getStoredOrders(): PrintOrder[] {
   try {
     const saved = localStorage.getItem('a4_orders');
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -997,6 +997,43 @@ export function saveStoredOrders(orders: PrintOrder[]): void {
   } catch (e) {
     console.error('Error saving orders to localStorage', e);
   }
+}
+
+export function getStoredDeletedIds(): string[] {
+  try {
+    const saved = localStorage.getItem('a4_sudan_deleted_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function saveStoredDeletedId(id: string): void {
+  try {
+    const current = getStoredDeletedIds();
+    const lower = id.toLowerCase();
+    if (!current.includes(lower)) {
+      const updated = [...current, lower];
+      localStorage.setItem('a4_sudan_deleted_ids', JSON.stringify(updated));
+    }
+  } catch (e) {}
+}
+
+export function removeStoredDeletedId(id: string): void {
+  try {
+    const current = getStoredDeletedIds();
+    const lower = id.toLowerCase();
+    const updated = current.filter(i => i.toLowerCase() !== lower);
+    localStorage.setItem('a4_sudan_deleted_ids', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+export function clearStoredDeletedIds(): void {
+  try {
+    localStorage.removeItem('a4_sudan_deleted_ids');
+  } catch (e) {}
 }
 
 export function getStoredDeletedOrders(): PrintOrder[] {
@@ -1033,3 +1070,54 @@ export function saveStoredDeletedOrders(orders: PrintOrder[]): void {
     console.error('Error saving deleted orders to localStorage', e);
   }
 }
+
+export function getStoredDeletedSheetIds(): string[] {
+  try {
+    const saved = localStorage.getItem('a4_sudan_deleted_sheet_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function saveStoredDeletedSheetId(id: string): void {
+  try {
+    const current = getStoredDeletedSheetIds();
+    const lower = id.toLowerCase();
+    if (!current.includes(lower)) {
+      const updated = [...current, lower];
+      localStorage.setItem('a4_sudan_deleted_sheet_ids', JSON.stringify(updated));
+    }
+  } catch (e) {}
+}
+
+export function removeStoredDeletedSheetId(id: string): void {
+  try {
+    const current = getStoredDeletedSheetIds();
+    const lower = id.toLowerCase();
+    const updated = current.filter(i => i.toLowerCase() !== lower);
+    localStorage.setItem('a4_sudan_deleted_sheet_ids', JSON.stringify(updated));
+  } catch (e) {}
+}
+
+export function getStoredSheets(): StudySheet[] {
+  try {
+    const saved = localStorage.getItem('a4_sheets');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return SAMPLE_STUDY_SHEETS;
+}
+
+export function saveStoredSheets(sheets: StudySheet[]): void {
+  try {
+    localStorage.setItem('a4_sheets', JSON.stringify(sheets));
+  } catch (e) {
+    console.error('Error saving sheets to localStorage', e);
+  }
+}
+

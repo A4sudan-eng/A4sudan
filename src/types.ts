@@ -90,11 +90,15 @@ export interface StudySheet {
 
 export interface DeliveryZone {
   id: string;
-  regionKey: 'omdurman' | 'bahri_eastnile' | 'khartoum' | 'states' | 'pickup';
-  regionName: string;
+  state?: string; // e.g. 'ولاية الخرطوم', 'ولاية الجزيرة', 'ولاية نهر النيل'
+  locality?: string; // e.g. 'محلية كرري', 'محلية أمدرمان', 'محلية أمبدة', 'محلية بحري', 'محلية شرق النيل', 'محلية الخرطوم', 'محلية جبل أولياء'
+  neighborhood?: string; // e.g. 'الثورة والحارات، الجرافة، الروضة'
+  regionKey?: 'omdurman' | 'bahri_eastnile' | 'khartoum' | 'states' | 'pickup' | string;
+  regionName?: string;
   zoneName: string;
   fee: number;
   details: string;
+  isActive?: boolean;
 }
 
 export interface PricingRates {
@@ -149,4 +153,69 @@ export interface ActivityLog {
   customerName?: string;
   details: string;
   timestamp: string;
+}
+
+export interface VisitorRecord {
+  id: string;
+  timestamp: string; // ISO format
+  date: string; // YYYY-MM-DD
+  hour: number; // 0 - 23
+  dayOfWeek: number; // 0 (Sun) - 6 (Sat)
+  path: string;
+  universityInterest?: string;
+  collegeInterest?: string;
+  device: 'mobile' | 'desktop' | 'tablet';
+  sessionId: string;
+}
+
+export interface DayStatItem {
+  date: string;
+  dayName: string;
+  visitors: number;
+  orders: number;
+  revenue: number;
+}
+
+export interface UniversityStatItem {
+  name: string;
+  ordersCount: number;
+  visitorsCount: number;
+  revenue: number;
+  percentage: number;
+  colleges: { name: string; ordersCount: number; revenue: number }[];
+}
+
+export interface AnalyticsSummary {
+  visitors: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    total: number;
+  };
+  orders: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    total: number;
+  };
+  revenue: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    total: number;
+    avgOrderValue: number;
+  };
+  conversionRate: number; // Percentage
+  dailyTrend: DayStatItem[];
+  universities: UniversityStatItem[];
+  devices: { mobile: number; desktop: number; tablet: number };
+  paymentMethods: { bankak: number; okash: number; fawry: number; cash: number };
+  deliveryMethods: { pickup: number; delivery: number };
+  printColors: { bw: number; color: number; mixed: number };
+  bindingTypes: Record<BindingType, number>;
+  sidesTypes: { single: number; double: number };
+  orderStatuses: Record<OrderStatus, number>;
+  hourlyDistribution: number[]; // 24 items
+  daysOfWeekDistribution: { dayName: string; orders: number; visitors: number }[];
+  topSheets: { id: string; title: string; institution: string; facultyOrYear: string; ordersCount: number }[];
 }
