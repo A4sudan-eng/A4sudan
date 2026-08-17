@@ -5,24 +5,128 @@ import {
   UserCheck, Award, Users, FolderTree, Landmark, ShieldAlert, ArrowLeft,
   X, MessageCircle, FileUp, AlertCircle, FileQuestion, FileX, Lock, EyeOff
 } from 'lucide-react';
-import { StudySheet, PrintFileOptions } from '../types';
-import { SAMPLE_STUDY_SHEETS } from '../data/initialData';
-import { formatSDG } from '../utils/pricing';
+import { StudySheet, PrintFileOptions, PricingRates } from '../types';
+import { SAMPLE_STUDY_SHEETS, DEFAULT_PRICING_RATES } from '../data/initialData';
+import { formatSDG, calculateFilePrice } from '../utils/pricing';
 import neelainLogo from '../assets/images/neelain_exact_logo_1785951359550.jpg';
 import { NEELAIN_COLLEGES, ACADEMIC_LEVELS, getStoredUniversities, UniversityInfo, getStoredAcademicLevels, AcademicLevel, getStoredDegreeTracks, DegreeTrackInfo } from '../data/neelainData';
-import { getUniversitiesFromCloud, subscribeToCloudUniversities, getAcademicLevelsFromCloud, subscribeToCloudAcademicLevels, getDegreeTracksFromCloud, subscribeToCloudDegreeTracks } from '../lib/firebase';
+import { 
+  getUniversitiesFromCloud, 
+  subscribeToCloudUniversities, 
+  getAcademicLevelsFromCloud, 
+  subscribeToCloudAcademicLevels, 
+  getDegreeTracksFromCloud, 
+  subscribeToCloudDegreeTracks,
+  subscribeToCloudPricingRates,
+  getPricingRatesFromCloud
+} from '../lib/firebase';
 
 interface SheetsHubProps {
   sheets: StudySheet[];
+  rates?: PricingRates;
   onSelectSheetForPrint: (sheetOptions: Partial<PrintFileOptions> | Partial<PrintFileOptions>[]) => void;
   onAddSheet?: (sheet: StudySheet) => void;
 }
 
-export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPrint, onAddSheet }) => {
+export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, rates, onSelectSheetForPrint, onAddSheet }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedDept, setSelectedDept] = useState<string>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
+
+  // Dynamic live pricing rates
+  const [activeRates, setActiveRates] = useState<PricingRates>(() => {
+    if (rates && rates.bwPerPage) return rates;
+    try {
+      const raw = localStorage.getItem('a4_pricing_rates');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.bwPerPage === 'number') return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_PRICING_RATES;
+  });
+
+  useEffect(() => {
+    if (rates && rates.bwPerPage) {
+      setActiveRates(rates);
+    }
+  }, [rates]);
+
+  useEffect(() => {
+    // Initial fetch from cloud Firestore
+    getPricingRatesFromCloud().then(cloudRates => {
+      if (cloudRates && typeof cloudRates.bwPerPage === 'number') {
+        setActiveRates(prev => ({ ...prev, ...cloudRates }));
+      }
+    }).catch(() => {});
+
+    // Real-time listener for pricing updates across all client devices & Vercel
+    const unsub = subscribeToCloudPricingRates((cloudRates) => {
+      if (cloudRates && typeof cloudRates.bwPerPage === 'number') {
+        setActiveRates(prev => ({ ...prev, ...cloudRates }));
+      }
+    });
+
+    const handleCustomEvent = (e: any) => {
+      if (e?.detail && typeof e.detail.bwPerPage === 'number') {
+        setActiveRates(prev => ({ ...prev, ...e.detail }));
+      }
+    };
+    window.addEventListener('a4_pricing_rates_updated', handleCustomEvent);
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'a4_pricing_rates' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && typeof parsed.bwPerPage === 'number') {
+            setActiveRates(prev => ({ ...prev, ...parsed }));
+          }
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    let ratesBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        ratesBc = new BroadcastChannel('a4_rates_channel');
+        ratesBc.onmessage = (ev) => {
+          if (ev?.data?.type === 'RATES_UPDATED' && ev?.data?.rates) {
+            setActiveRates(prev => ({ ...prev, ...ev.data.rates }));
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      if (unsub) unsub();
+      window.removeEventListener('a4_pricing_rates_updated', handleCustomEvent);
+      window.removeEventListener('storage', handleStorageEvent);
+      if (ratesBc) {
+        try { ratesBc.close(); } catch (e) {}
+      }
+    };
+  }, []);
+
+  // Helper to dynamically calculate sheet price based on sheet custom priceEstimate or active rates
+  const getSheetPrice = (sheet: StudySheet): number => {
+    if (!sheet) return 0;
+    if (typeof sheet.priceEstimate === 'number' && sheet.priceEstimate > 0) {
+      return sheet.priceEstimate;
+    }
+    return calculateFilePrice(
+      sheet.pageCount || 40,
+      sheet.recommendedColor || 'bw',
+      'a4',
+      'double',
+      '70g',
+      sheet.recommendedBinding || 'spiral_plastic',
+      1,
+      activeRates,
+      2
+    );
+  };
 
   // Dynamic Universities list from localStorage / defaults
   const [sudanUnis, setSudanUnis] = useState<UniversityInfo[]>(() => getStoredUniversities());
@@ -335,7 +439,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const activeSheetsInView = activeMode === 'leader' && leaderStep === 'semester_sheets' ? leaderFilteredSheets : filteredSheets;
   const availableFilteredSheets = activeSheetsInView.filter(s => s.isAvailable !== false);
   const selectedSheetsInView = availableFilteredSheets.filter(s => selectedSheetIds.includes(s.id));
-  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + (s.priceEstimate * getCopies(s.id)), 0);
+  const selectedTotalPrice = selectedSheetsInView.reduce((sum, s) => sum + (getSheetPrice(s) * getCopies(s.id)), 0);
 
   const isAllSelected = availableFilteredSheets.length > 0 && availableFilteredSheets.every(s => selectedSheetIds.includes(s.id));
 
@@ -368,7 +472,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
   const handlePrintSheet = (sheet: StudySheet) => {
     const hierarchy = buildSheetHierarchyPath(sheet);
     const copies = getCopies(sheet.id);
-    const unitPrice = sheet.priceEstimate || 0;
+    const unitPrice = getSheetPrice(sheet);
     onSelectSheetForPrint({
       fileName: `${sheet.title}.pdf`,
       pageCount: sheet.pageCount || 40,
@@ -392,7 +496,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     const optionsList: Partial<PrintFileOptions>[] = selectedSheetsInView.map(sheet => {
       const hierarchy = buildSheetHierarchyPath(sheet);
       const copies = getCopies(sheet.id);
-      const unitPrice = sheet.priceEstimate || 0;
+      const unitPrice = getSheetPrice(sheet);
       return {
         fileName: `${sheet.title}.pdf`,
         pageCount: sheet.pageCount || 40,
@@ -414,6 +518,12 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
     e.preventDefault();
     if (!newTitle.trim() || !newSubject.trim()) return;
 
+    const dummySheet: Partial<StudySheet> = {
+      pageCount: newPageCount,
+      recommendedColor: 'bw',
+      recommendedBinding: 'spiral_plastic'
+    };
+
     const created: StudySheet = {
       id: `sheet-custom-${Date.now()}`,
       title: newTitle,
@@ -429,7 +539,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
       downloadCount: 1,
       recommendedColor: 'bw',
       recommendedBinding: 'spiral_plastic',
-      priceEstimate: newPageCount * 60 + 1200,
+      priceEstimate: getSheetPrice(dummySheet as StudySheet),
       isAvailable: true,
     };
 
@@ -1226,7 +1336,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                           <div>
                             <span className="text-[10px] text-slate-400 block">السعر:</span>
                             <strong className="text-emerald-900 font-black text-xs sm:text-sm">
-                              {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
+                              {formatSDG(getSheetPrice(sheet) * getCopies(sheet.id))}
                             </strong>
                           </div>
 
@@ -1588,7 +1698,7 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, onSelectSheetForPr
                         <span className="text-[11px] text-slate-400 block">السعر:</span>
                         {isAvailable ? (
                           <strong className="text-emerald-900 font-black text-sm sm:text-base">
-                            {formatSDG(sheet.priceEstimate * getCopies(sheet.id))}
+                            {formatSDG(getSheetPrice(sheet) * getCopies(sheet.id))}
                           </strong>
                         ) : (
                           <strong className="text-rose-600 font-bold text-xs">

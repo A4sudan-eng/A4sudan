@@ -2,7 +2,8 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Upload, FileText, Trash2, Plus, Check, MapPin, Phone, User, 
   CreditCard, Truck, Store, Info, Download, Copy, AlertCircle, FileCheck,
-  Camera, Image as ImageIcon, X, Tag, BookOpen, GraduationCap
+  Camera, Image as ImageIcon, X, Tag, BookOpen, GraduationCap,
+  CheckCircle2, AlertTriangle, Loader2, ShieldCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PrintFileOptions, PrintOrder, PricingRates, PaperSize, PrintColor, PrintSides, PaperWeight, BindingType, DeliveryMethod, PaymentMethod, DeliveryZone, Coupon } from '../types';
@@ -39,6 +40,21 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [bankakTransactionId, setBankakTransactionId] = useState('');
   const [bankakProofUrl, setBankakProofUrl] = useState('');
+  const [isVerifyingReceipt, setIsVerifyingReceipt] = useState(false);
+  const [receiptVerificationResult, setReceiptVerificationResult] = useState<{
+    isValid?: boolean;
+    hasTransactionId?: boolean;
+    transactionId?: string;
+    hasRecipientName?: boolean;
+    recipientName?: string;
+    amount?: string;
+    bankName?: string;
+    transferDate?: string;
+    status?: string;
+    message?: string;
+  } | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptSuccess, setReceiptSuccess] = useState<string | null>(null);
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<PrintOrder | null>(null);
@@ -102,6 +118,53 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const fileInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
 
+  const verifyReceiptImage = async (compressedDataUrl: string) => {
+    setIsVerifyingReceipt(true);
+    setReceiptError(null);
+    setReceiptSuccess(null);
+
+    try {
+      const res = await fetch('/api/verify-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: compressedDataUrl,
+          paymentMethod: paymentMethod || 'بنكك',
+        }),
+      });
+
+      const data = await res.json();
+      setReceiptVerificationResult(data);
+
+      if (data.isValid) {
+        setBankakProofUrl(compressedDataUrl);
+        setReceiptSuccess(
+          data.message || 'تم فحص وقبول الإشعار بنجاح! تم التحويل لحساب محمد عثمان حاج شرفي.'
+        );
+        if (data.transactionId && !bankakTransactionId.trim()) {
+          setBankakTransactionId(data.transactionId);
+        }
+        setReceiptError(null);
+      } else {
+        // Strict verification failed: Reject
+        setBankakProofUrl('');
+        setReceiptError(
+          data.message || 'الإشعار المرفق غير صالح: يجب أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي).'
+        );
+        setReceiptSuccess(null);
+        if (receiptInputRef.current) receiptInputRef.current.value = '';
+      }
+    } catch (err) {
+      console.error('Receipt verification network error:', err);
+      // Fallback
+      setBankakProofUrl(compressedDataUrl);
+      setReceiptSuccess('تم إرفاق صورة الإشعار بنجاح (ستتم مراجعته من قبل إدارة المكتبة).');
+      setReceiptError(null);
+    } finally {
+      setIsVerifyingReceipt(false);
+    }
+  };
+
   const handleReceiptImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -113,6 +176,10 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       reader.onload = (evt) => {
         const dataUrl = evt.target?.result as string;
         if (!dataUrl) return;
+
+        setReceiptError(null);
+        setReceiptSuccess(null);
+        setIsVerifyingReceipt(true);
 
         // Compress image using Canvas
         const img = new Image();
@@ -133,15 +200,16 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
+          let compressed = dataUrl;
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const compressed = canvas.toDataURL('image/jpeg', 0.72);
-            setBankakProofUrl(compressed);
-          } else {
-            setBankakProofUrl(dataUrl);
+            compressed = canvas.toDataURL('image/jpeg', 0.72);
           }
+          verifyReceiptImage(compressed);
         };
-        img.onerror = () => setBankakProofUrl(dataUrl);
+        img.onerror = () => {
+          verifyReceiptImage(dataUrl);
+        };
         img.src = dataUrl;
       };
       reader.readAsDataURL(file);
@@ -462,8 +530,16 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       alert('الرجاء اختيار طريقة الدفع أولاً (بنكك، أوكاش، أو فوري)');
       return;
     }
-    if (!bankakTransactionId.trim() && !bankakProofUrl) {
-      alert('الرجاء إدخال رقم العملية المرجعي أو إرسال صورة إشعار التحويل لتأكيد الدفع (أي منهما يكفي لبدء الطلب)');
+    if (isVerifyingReceipt) {
+      alert('⏳ جاري فحص وتدقيق صورة الإشعار ذكياً، يرجى الانتظار بضع ثوانٍ...');
+      return;
+    }
+    if (!bankakProofUrl) {
+      alert('⚠️ إرفاق صورة إشعار التحويل البنكي إجباري لإتمام وتأكيد الطلب.\nيرجى إرسال صورة أو لقطة شاشة الإشعار لحساب (محمد عثمان حاج شرفي). لن يتم قبول الطلب بدون إشعار تحويل صالح.');
+      return;
+    }
+    if (receiptError) {
+      alert(`⚠️ لا يمكن إتمام الطلب لأن الإشعار المرفق غير صالح:\n${receiptError}\n\nيرجى رفع إشعار تحويل صحيح لحساب (محمد عثمان حاج شرفي) يحتوي على رقم العملية.`);
       return;
     }
 
@@ -1360,42 +1436,68 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                       </div>
                     </div>
 
-                    <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
-                      <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                      <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
+                    <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-xs text-amber-950 flex items-start gap-2 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <span><strong>إثبات التحويل إجباري:</strong> إرفاق صورة إشعار التحويل إجباري لإتمام الطلب. يشترط أن يكون الإشعار باسم المستفيد <strong>(محمد عثمان حاج شرفي)</strong> ومشتمل على <strong>رقم العملية</strong>.</span>
                     </div>
 
-                    {/* Option A: Reference Number */}
+                    {/* Option A: Reference Number (Optional) */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        1. رقم العملية / الإشعار المرجعي من بنكك (اختياري):
+                        1. رقم العملية / الإشعار المرجعي من بنكك (اختياري - يُستخرج تلقائياً من الإشعار):
                       </label>
                       <input
                         type="text"
                         value={bankakTransactionId}
                         onChange={e => setBankakTransactionId(e.target.value)}
-                        placeholder="أدخل رقم الإشعار المرجعي هنا (مثال: BNK-8491029)"
+                        placeholder="أدخل رقم الإشعار المرجعي إن وجد (اختياري)"
                         className="w-full bg-white border border-emerald-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                       />
                     </div>
 
-                    {/* Option B: Screenshot / Image upload */}
+                    {/* Option B: Screenshot / Image upload (Mandatory) */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (اختياري):
+                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (<span className="text-red-600 font-black">إجباري *</span>):
                       </label>
 
-                      {bankakProofUrl ? (
-                        <div className="relative border border-emerald-300 rounded-xl p-2.5 bg-emerald-50 flex items-center justify-between gap-3">
+                      <input
+                        type="file"
+                        ref={receiptInputRef}
+                        accept="image/*"
+                        onChange={handleReceiptImageUpload}
+                        className="hidden"
+                      />
+
+                      {isVerifyingReceipt ? (
+                        <div className="border border-blue-300 bg-blue-50/90 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                          <div className="text-xs">
+                            <strong className="text-blue-950 block font-bold">جاري فحص وتدقيق صورة الإشعار ذكياً... 🔍</strong>
+                            <span className="text-blue-700 text-[11px]">يتم التحقق من رقم العملية ومطابقة اسم المستفيد (محمد عثمان حاج شرفي)</span>
+                          </div>
+                        </div>
+                      ) : bankakProofUrl ? (
+                        <div className="relative border border-emerald-300 rounded-xl p-3 bg-emerald-50/90 flex items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3">
                             <img 
                               src={bankakProofUrl} 
                               alt="إشعار التحويل" 
-                              className="w-14 h-14 object-cover rounded-lg border border-emerald-300 bg-white shadow-sm"
+                              className="w-14 h-14 object-cover rounded-lg border border-emerald-400 bg-white shadow-xs"
                             />
-                            <div className="text-xs">
-                              <span className="font-bold text-emerald-950 block">تم إرفاق صورة الإشعار بنجاح ✅</span>
-                              <span className="text-slate-600 text-[11px]">ستظهر الصورة لإدارة المكتبة للتأكيد الفوري</span>
+                            <div className="text-xs space-y-0.5">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>تم قبول واعتماد الإشعار بنجاح ✅</span>
+                              </div>
+                              <p className="text-slate-600 text-[11px]">
+                                المستفيد: <strong className="text-slate-800 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                              </p>
+                              {bankakTransactionId && (
+                                <p className="text-slate-600 text-[11px] font-mono">
+                                  رقم العملية: <strong className="text-emerald-900 font-bold">{bankakTransactionId}</strong>
+                                </p>
+                              )}
                             </div>
                           </div>
                           <button
@@ -1403,13 +1505,36 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             onClick={(e) => {
                               e.stopPropagation();
                               setBankakProofUrl('');
+                              setReceiptSuccess(null);
+                              setReceiptError(null);
                               if (receiptInputRef.current) receiptInputRef.current.value = '';
                             }}
-                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                            title="حذف الإشعار وإعادة الرفع"
                           >
                             <X className="w-3.5 h-3.5" />
-                            <span>حذف</span>
+                            <span>تغيير</span>
                           </button>
+                        </div>
+                      ) : receiptError ? (
+                        <div className="border border-red-300 bg-red-50/95 rounded-xl p-3 space-y-2 text-xs shadow-xs">
+                          <div className="flex items-start gap-2 text-red-800">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-bold text-red-950">لم يتم قبول الإشعار المرفق ❌</strong>
+                              <p className="text-red-800 text-[11px] leading-relaxed mt-0.5">{receiptError}</p>
+                            </div>
+                          </div>
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              receiptInputRef.current?.click();
+                            }}
+                            className="border border-dashed border-red-400 hover:border-red-600 bg-white p-2.5 rounded-lg cursor-pointer transition-all text-center flex items-center justify-center gap-1.5 text-red-700 font-bold text-xs"
+                          >
+                            <Camera className="w-4 h-4 text-red-600" />
+                            <span>اضغط هنا لرفع إشعار تحويل صالح باسم (محمد عثمان حاج شرفي) 📷</span>
+                          </div>
                         </div>
                       ) : (
                         <div 
@@ -1417,19 +1542,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             e.stopPropagation();
                             receiptInputRef.current?.click();
                           }}
-                          className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/50 p-3 rounded-xl cursor-pointer transition-all text-center group"
+                          className="border-2 border-dashed border-emerald-400 hover:border-emerald-600 bg-white hover:bg-emerald-50/60 p-3.5 rounded-xl cursor-pointer transition-all text-center group shadow-xs"
                         >
-                          <input
-                            type="file"
-                            ref={receiptInputRef}
-                            accept="image/*"
-                            onChange={handleReceiptImageUpload}
-                            className="hidden"
-                          />
-                          <div className="flex items-center justify-center gap-2 text-emerald-800 font-bold text-xs">
+                          <div className="flex items-center justify-center gap-2 text-emerald-900 font-bold text-xs">
                             <Camera className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                            <span>أرسل صورة الإشعار (اضغط هنا لرفع الصورة) 📷</span>
+                            <span>أرسل صورة إشعار التحويل البنكي (إجباري *) 📷</span>
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            يشترط أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي)
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1495,21 +1616,21 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                       </div>
                     </div>
 
-                    <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
-                      <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                      <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
+                    <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-xs text-amber-950 flex items-start gap-2 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <span><strong>إثبات التحويل إجباري:</strong> إرفاق صورة إشعار التحويل إجباري لإتمام الطلب. يشترط أن يكون الإشعار باسم المستفيد <strong>(محمد عثمان حاج شرفي)</strong> ومشتمل على <strong>رقم العملية</strong>.</span>
                     </div>
 
                     {/* Option A: Reference Number */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        1. رقم العملية / الإشعار المرجعي من أوكاش (اختياري):
+                        1. رقم العملية / الإشعار المرجعي من أوكاش (اختياري - يُستخرج تلقائياً من الإشعار):
                       </label>
                       <input
                         type="text"
                         value={bankakTransactionId}
                         onChange={e => setBankakTransactionId(e.target.value)}
-                        placeholder="أدخل رقم العملية المرجعي من تطبيق أوكاش"
+                        placeholder="أدخل رقم العملية المرجعي من تطبيق أوكاش إن وجد"
                         className="w-full bg-white border border-emerald-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1517,20 +1638,46 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                     {/* Option B: Screenshot / Image upload */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (اختياري):
+                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (<span className="text-red-600 font-black">إجباري *</span>):
                       </label>
 
-                      {bankakProofUrl ? (
-                        <div className="relative border border-emerald-300 rounded-xl p-2.5 bg-emerald-50 flex items-center justify-between gap-3">
+                      <input
+                        type="file"
+                        ref={receiptInputRef}
+                        accept="image/*"
+                        onChange={handleReceiptImageUpload}
+                        className="hidden"
+                      />
+
+                      {isVerifyingReceipt ? (
+                        <div className="border border-blue-300 bg-blue-50/90 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                          <div className="text-xs">
+                            <strong className="text-blue-950 block font-bold">جاري فحص وتدقيق صورة الإشعار ذكياً... 🔍</strong>
+                            <span className="text-blue-700 text-[11px]">يتم التحقق من رقم العملية ومطابقة اسم المستفيد (محمد عثمان حاج شرفي)</span>
+                          </div>
+                        </div>
+                      ) : bankakProofUrl ? (
+                        <div className="relative border border-emerald-300 rounded-xl p-3 bg-emerald-50/90 flex items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3">
                             <img 
                               src={bankakProofUrl} 
                               alt="إشعار التحويل" 
-                              className="w-14 h-14 object-cover rounded-lg border border-emerald-300 bg-white shadow-sm"
+                              className="w-14 h-14 object-cover rounded-lg border border-emerald-400 bg-white shadow-xs"
                             />
-                            <div className="text-xs">
-                              <span className="font-bold text-emerald-950 block">تم إرفاق صورة الإشعار بنجاح ✅</span>
-                              <span className="text-slate-600 text-[11px]">ستظهر الصورة لإدارة المكتبة للتأكيد الفوري</span>
+                            <div className="text-xs space-y-0.5">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>تم قبول واعتماد الإشعار بنجاح ✅</span>
+                              </div>
+                              <p className="text-slate-600 text-[11px]">
+                                المستفيد: <strong className="text-slate-800 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                              </p>
+                              {bankakTransactionId && (
+                                <p className="text-slate-600 text-[11px] font-mono">
+                                  رقم العملية: <strong className="text-emerald-900 font-bold">{bankakTransactionId}</strong>
+                                </p>
+                              )}
                             </div>
                           </div>
                           <button
@@ -1538,13 +1685,36 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             onClick={(e) => {
                               e.stopPropagation();
                               setBankakProofUrl('');
+                              setReceiptSuccess(null);
+                              setReceiptError(null);
                               if (receiptInputRef.current) receiptInputRef.current.value = '';
                             }}
-                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                            title="حذف الإشعار وإعادة الرفع"
                           >
                             <X className="w-3.5 h-3.5" />
-                            <span>حذف</span>
+                            <span>تغيير</span>
                           </button>
+                        </div>
+                      ) : receiptError ? (
+                        <div className="border border-red-300 bg-red-50/95 rounded-xl p-3 space-y-2 text-xs shadow-xs">
+                          <div className="flex items-start gap-2 text-red-800">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-bold text-red-950">لم يتم قبول الإشعار المرفق ❌</strong>
+                              <p className="text-red-800 text-[11px] leading-relaxed mt-0.5">{receiptError}</p>
+                            </div>
+                          </div>
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              receiptInputRef.current?.click();
+                            }}
+                            className="border border-dashed border-red-400 hover:border-red-600 bg-white p-2.5 rounded-lg cursor-pointer transition-all text-center flex items-center justify-center gap-1.5 text-red-700 font-bold text-xs"
+                          >
+                            <Camera className="w-4 h-4 text-red-600" />
+                            <span>اضغط هنا لرفع إشعار تحويل صالح باسم (محمد عثمان حاج شرفي) 📷</span>
+                          </div>
                         </div>
                       ) : (
                         <div 
@@ -1552,19 +1722,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             e.stopPropagation();
                             receiptInputRef.current?.click();
                           }}
-                          className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/50 p-3 rounded-xl cursor-pointer transition-all text-center group"
+                          className="border-2 border-dashed border-emerald-400 hover:border-emerald-600 bg-white hover:bg-emerald-50/60 p-3.5 rounded-xl cursor-pointer transition-all text-center group shadow-xs"
                         >
-                          <input
-                            type="file"
-                            ref={receiptInputRef}
-                            accept="image/*"
-                            onChange={handleReceiptImageUpload}
-                            className="hidden"
-                          />
-                          <div className="flex items-center justify-center gap-2 text-emerald-800 font-bold text-xs">
+                          <div className="flex items-center justify-center gap-2 text-emerald-900 font-bold text-xs">
                             <Camera className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                            <span>أرسل صورة الإشعار (اضغط هنا لرفع الصورة) 📷</span>
+                            <span>أرسل صورة إشعار التحويل البنكي (إجباري *) 📷</span>
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            يشترط أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي)
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1630,21 +1796,21 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                       </div>
                     </div>
 
-                    <div className="bg-emerald-100/70 p-2.5 rounded-lg border border-emerald-200 text-xs text-emerald-950 flex items-start gap-2 font-medium">
-                      <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                      <span>إثبات الدفع: يمكنك إدخال رقم العملية المرجعي أو أرسال صورة الإشعار (أي خيار منهما يكفي لبدء وتأكيد الطلب).</span>
+                    <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-xs text-amber-950 flex items-start gap-2 font-medium">
+                      <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                      <span><strong>إثبات التحويل إجباري:</strong> إرفاق صورة إشعار التحويل إجباري لإتمام الطلب. يشترط أن يكون الإشعار باسم المستفيد <strong>(محمد عثمان حاج شرفي)</strong> ومشتمل على <strong>رقم العملية</strong>.</span>
                     </div>
 
                     {/* Option A: Reference Number */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        1. رقم العملية / الإشعار المرجعي من فوري (اختياري):
+                        1. رقم العملية / الإشعار المرجعي من فوري (اختياري - يُستخرج تلقائياً من الإشعار):
                       </label>
                       <input
                         type="text"
                         value={bankakTransactionId}
                         onChange={e => setBankakTransactionId(e.target.value)}
-                        placeholder="أدخل رقم العملية أو مرجع التحويل من فوري"
+                        placeholder="أدخل رقم العملية أو مرجع التحويل من فوري إن وجد"
                         className="w-full bg-white border border-emerald-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                       />
                     </div>
@@ -1652,20 +1818,46 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                     {/* Option B: Screenshot / Image upload */}
                     <div>
                       <label className="block text-xs font-bold text-slate-800 mb-1">
-                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (اختياري):
+                        2. أرسل صورة الإشعار / سكرين شوت التحويلة (<span className="text-red-600 font-black">إجباري *</span>):
                       </label>
 
-                      {bankakProofUrl ? (
-                        <div className="relative border border-emerald-300 rounded-xl p-2.5 bg-emerald-50 flex items-center justify-between gap-3">
+                      <input
+                        type="file"
+                        ref={receiptInputRef}
+                        accept="image/*"
+                        onChange={handleReceiptImageUpload}
+                        className="hidden"
+                      />
+
+                      {isVerifyingReceipt ? (
+                        <div className="border border-blue-300 bg-blue-50/90 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+                          <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                          <div className="text-xs">
+                            <strong className="text-blue-950 block font-bold">جاري فحص وتدقيق صورة الإشعار ذكياً... 🔍</strong>
+                            <span className="text-blue-700 text-[11px]">يتم التحقق من رقم العملية ومطابقة اسم المستفيد (محمد عثمان حاج شرفي)</span>
+                          </div>
+                        </div>
+                      ) : bankakProofUrl ? (
+                        <div className="relative border border-emerald-300 rounded-xl p-3 bg-emerald-50/90 flex items-center justify-between gap-3 shadow-xs">
                           <div className="flex items-center gap-3">
                             <img 
                               src={bankakProofUrl} 
                               alt="إشعار التحويل" 
-                              className="w-14 h-14 object-cover rounded-lg border border-emerald-300 bg-white shadow-sm"
+                              className="w-14 h-14 object-cover rounded-lg border border-emerald-400 bg-white shadow-xs"
                             />
-                            <div className="text-xs">
-                              <span className="font-bold text-emerald-950 block">تم إرفاق صورة الإشعار بنجاح ✅</span>
-                              <span className="text-slate-600 text-[11px]">ستظهر الصورة لإدارة المكتبة للتأكيد الفوري</span>
+                            <div className="text-xs space-y-0.5">
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>تم قبول واعتماد الإشعار بنجاح ✅</span>
+                              </div>
+                              <p className="text-slate-600 text-[11px]">
+                                المستفيد: <strong className="text-slate-800 font-bold">محمد عثمان حاج شرفي عثمان</strong>
+                              </p>
+                              {bankakTransactionId && (
+                                <p className="text-slate-600 text-[11px] font-mono">
+                                  رقم العملية: <strong className="text-emerald-900 font-bold">{bankakTransactionId}</strong>
+                                </p>
+                              )}
                             </div>
                           </div>
                           <button
@@ -1673,13 +1865,36 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             onClick={(e) => {
                               e.stopPropagation();
                               setBankakProofUrl('');
+                              setReceiptSuccess(null);
+                              setReceiptError(null);
                               if (receiptInputRef.current) receiptInputRef.current.value = '';
                             }}
-                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                            title="حذف الإشعار وإعادة الرفع"
                           >
                             <X className="w-3.5 h-3.5" />
-                            <span>حذف</span>
+                            <span>تغيير</span>
                           </button>
+                        </div>
+                      ) : receiptError ? (
+                        <div className="border border-red-300 bg-red-50/95 rounded-xl p-3 space-y-2 text-xs shadow-xs">
+                          <div className="flex items-start gap-2 text-red-800">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-bold text-red-950">لم يتم قبول الإشعار المرفق ❌</strong>
+                              <p className="text-red-800 text-[11px] leading-relaxed mt-0.5">{receiptError}</p>
+                            </div>
+                          </div>
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              receiptInputRef.current?.click();
+                            }}
+                            className="border border-dashed border-red-400 hover:border-red-600 bg-white p-2.5 rounded-lg cursor-pointer transition-all text-center flex items-center justify-center gap-1.5 text-red-700 font-bold text-xs"
+                          >
+                            <Camera className="w-4 h-4 text-red-600" />
+                            <span>اضغط هنا لرفع إشعار تحويل صالح باسم (محمد عثمان حاج شرفي) 📷</span>
+                          </div>
                         </div>
                       ) : (
                         <div 
@@ -1687,19 +1902,15 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                             e.stopPropagation();
                             receiptInputRef.current?.click();
                           }}
-                          className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/50 p-3 rounded-xl cursor-pointer transition-all text-center group"
+                          className="border-2 border-dashed border-emerald-400 hover:border-emerald-600 bg-white hover:bg-emerald-50/60 p-3.5 rounded-xl cursor-pointer transition-all text-center group shadow-xs"
                         >
-                          <input
-                            type="file"
-                            ref={receiptInputRef}
-                            accept="image/*"
-                            onChange={handleReceiptImageUpload}
-                            className="hidden"
-                          />
-                          <div className="flex items-center justify-center gap-2 text-emerald-800 font-bold text-xs">
+                          <div className="flex items-center justify-center gap-2 text-emerald-900 font-bold text-xs">
                             <Camera className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                            <span>أرسل صورة الإشعار (اضغط هنا لرفع الصورة) 📷</span>
+                            <span>أرسل صورة إشعار التحويل البنكي (إجباري *) 📷</span>
                           </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            يشترط أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي)
+                          </p>
                         </div>
                       )}
                     </div>

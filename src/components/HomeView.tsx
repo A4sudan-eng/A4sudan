@@ -36,7 +36,39 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigateToTrack,
   onNavigateToCustomPrint
 }) => {
-  const promoPrice = rates?.promoPaperPrice ?? 99;
+  const [localPromoPrice, setLocalPromoPrice] = useState<number>(() => {
+    if (rates?.promoPaperPrice !== undefined) return rates.promoPaperPrice;
+    try {
+      const raw = localStorage.getItem('a4_pricing_rates');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.promoPaperPrice === 'number') {
+          return parsed.promoPaperPrice;
+        }
+      }
+    } catch (e) {}
+    return 99;
+  });
+
+  useEffect(() => {
+    if (rates?.promoPaperPrice !== undefined) {
+      setLocalPromoPrice(rates.promoPaperPrice);
+    }
+  }, [rates?.promoPaperPrice]);
+
+  useEffect(() => {
+    const handleRatesUpdated = (e: any) => {
+      if (e?.detail && typeof e.detail.promoPaperPrice === 'number') {
+        setLocalPromoPrice(e.detail.promoPaperPrice);
+      }
+    };
+    window.addEventListener('a4_pricing_rates_updated', handleRatesUpdated);
+    return () => {
+      window.removeEventListener('a4_pricing_rates_updated', handleRatesUpdated);
+    };
+  }, []);
+
+  const promoPrice = localPromoPrice;
   const whatsappNumber = '0119636365';
   const whatsappUrl = `https://wa.me/249119636365?text=${encodeURIComponent(
     `السلام عليكم A4 SUDAN، أرغب في الاستفادة من عرض طباعة الورقة بـ ${promoPrice} ج.س للشيتات والمذكرات الجامعية.`

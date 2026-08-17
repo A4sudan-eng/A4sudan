@@ -28,7 +28,8 @@ import {
   subscribeToCloudAcademicLevels,
   saveDegreeTracksToCloud,
   getDegreeTracksFromCloud,
-  subscribeToCloudDegreeTracks
+  subscribeToCloudDegreeTracks,
+  savePricingRatesToCloud
 } from '../lib/firebase';
 import { 
   NEELAIN_COLLEGES, 
@@ -512,6 +513,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingRates, setEditingRates] = useState<PricingRates>({ ...rates });
   const [isSaved, setIsSaved] = useState(false);
+  const [isPromoSaved, setIsPromoSaved] = useState(false);
   const [simSheetPrice, setSimSheetPrice] = useState<number>(rates.bwPerPage || 200);
 
   // Expenses Management State
@@ -1476,7 +1478,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       downloadCount: 1,
       recommendedColor: sheetColor,
       recommendedBinding: sheetBinding,
-      priceEstimate: sheetPrice || (sheetPages * 60 + 1200),
+      priceEstimate: sheetPrice || calculateFilePrice(
+        sheetPages, 
+        sheetColor, 
+        'a4', 
+        'double', 
+        '70g', 
+        sheetBinding, 
+        1, 
+        rates, 
+        2
+      ),
       isAvailable: sheetAvailable,
     };
 
@@ -2261,25 +2273,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
+  const handleQuickSavePromoPrice = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    const valid = {
+      ...DEFAULT_PRICING_RATES,
+      ...editingRates,
+      promoPaperPrice: editingRates.promoPaperPrice ?? 99
+    };
+    // 1. Update parent state & trigger local/global sync
+    onUpdateRates(valid);
+    // 2. Direct cloud sync to Firestore
+    savePricingRatesToCloud(valid).catch(() => {});
+    // 3. Sync to API backend
+    try {
+      await fetch('/api/pricing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(valid),
+      });
+    } catch (err) {}
+
+    // Recalculate sheets
+    if (sheets && sheets.length > 0 && onBatchSaveSheets) {
+      const updatedSheets = sheets.map(s => ({
+        ...s,
+        priceEstimate: calculateFilePrice(
+          s.pageCount || 40,
+          s.recommendedColor || 'bw',
+          'a4',
+          'double',
+          '70g',
+          s.recommendedBinding || 'spiral_plastic',
+          1,
+          valid,
+          2
+        )
+      }));
+      onBatchSaveSheets(updatedSheets);
+    }
+    
+    setIsPromoSaved(true);
+    setIsSaved(true);
+    setTimeout(() => {
+      setIsPromoSaved(false);
+      setIsSaved(false);
+    }, 4000);
+    addLogEntry(
+      'pricing_updated',
+      `تم تحديث سعر الورقة الترويجي في العروض والصفحة الرئيسية إلى (${valid.promoPaperPrice} ج.س)`
+    );
+  };
+
   const handleSaveRates = async (e: React.FormEvent) => {
     e.preventDefault();
+    const valid = {
+      ...DEFAULT_PRICING_RATES,
+      ...editingRates,
+      promoPaperPrice: editingRates.promoPaperPrice ?? 99
+    };
+    onUpdateRates(valid);
+    savePricingRatesToCloud(valid).catch(() => {});
+
+    // Recalculate and batch save sheets
+    if (sheets && sheets.length > 0 && onBatchSaveSheets) {
+      const updatedSheets = sheets.map(s => ({
+        ...s,
+        priceEstimate: calculateFilePrice(
+          s.pageCount || 40,
+          s.recommendedColor || 'bw',
+          'a4',
+          'double',
+          '70g',
+          s.recommendedBinding || 'spiral_plastic',
+          1,
+          valid,
+          2
+        )
+      }));
+      onBatchSaveSheets(updatedSheets);
+    }
+
     try {
       const res = await fetch('/api/pricing', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingRates),
+        body: JSON.stringify(valid),
       });
       if (res.ok) {
-        onUpdateRates(editingRates);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 3000);
         addLogEntry(
           'pricing_updated',
-          `تم تحديث تعريفات أسعار الطباعة والتجليد (أبيض/أسود: ${editingRates.bwPerPage} ج.س، ألوان: ${editingRates.colorPerPage} ج.س)`
+          `تم تحديث تعريفات أسعار الطباعة والتجليد (أبيض/أسود: ${valid.bwPerPage} ج.س، ألوان: ${valid.colorPerPage} ج.س، العرض: ${valid.promoPaperPrice} ج.س)`
         );
       }
     } catch (err) {
-      onUpdateRates(editingRates);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
       addLogEntry(
@@ -4133,8 +4221,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <p className="text-xs text-slate-500">إمكانية التعديل السريع لأسعار الشيتات والمسمى والتوفر أو حذفها</p>
               </div>
 
-              {/* Filters */}
+              {/* Filters & Batch Sync Action */}
               <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                {onBatchSaveSheets && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = sheets.map(s => ({
+                        ...s,
+                        priceEstimate: calculateFilePrice(
+                          s.pageCount || 40,
+                          s.recommendedColor || 'bw',
+                          'a4',
+                          'double',
+                          '70g',
+                          s.recommendedBinding || 'spiral_plastic',
+                          1,
+                          rates,
+                          2
+                        )
+                      }));
+                      onBatchSaveSheets(updated);
+                      savePricingRatesToCloud(rates).catch(() => {});
+                      triggerToast(`✅ تمت إعادة تسعير ومزامنة جميع شيتات الكلية (${sheets.length}) وفق تسعيرة الورق (${rates.bwPerPage} ج.س)! 🚀`);
+                    }}
+                    className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-3 py-2 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                    title="تحديث ومزامنة كافة الشيتات مع تسعيرة الورق الحالية"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>مزامنة تسعيرة كل الشيتات ({rates.bwPerPage} ج.س/ورقة)</span>
+                  </button>
+                )}
+
                 <div className="relative flex-1 md:w-48">
                   <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
                   <input
@@ -4193,7 +4311,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredSheets.map((st) => {
-                    const currentCalculatedPrice = st.priceEstimate || (st.pageCount * 60 + 1200);
+                    const fallbackPrice = calculateFilePrice(
+                      st.pageCount || 40,
+                      st.recommendedColor || 'bw',
+                      'a4',
+                      'double',
+                      '70g',
+                      st.recommendedBinding || 'spiral_plastic',
+                      1,
+                      rates,
+                      2
+                    );
+                    const currentCalculatedPrice = st.priceEstimate || fallbackPrice;
                     const editedPrice = quickPrices[st.id];
                     const hasPriceChanged = editedPrice !== undefined && editedPrice !== currentCalculatedPrice;
 
@@ -4559,7 +4688,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-2">
+                <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-3">
                   <label className="block font-black text-slate-900 text-sm">
                     سعر الورقة الترويجي (SDG) *
                   </label>
@@ -4573,14 +4702,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         const val = Number(e.target.value) || 0;
                         setEditingRates({ ...editingRates, promoPaperPrice: val });
                       }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleQuickSavePromoPrice();
+                        }
+                      }}
                       className="w-full bg-slate-50 border-2 border-amber-300 rounded-xl p-3 font-mono font-black text-slate-950 text-lg focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                     <span className="absolute left-3 top-3.5 text-xs text-amber-900 font-black pointer-events-none">
                       ج.س / ورقة
                     </span>
                   </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleQuickSavePromoPrice}
+                      className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black py-2.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer text-xs sm:text-sm"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>حفظ ونشر سعر العرض ({editingRates.promoPaperPrice ?? 99} ج.س) لجميع العملاء 🚀</span>
+                    </button>
+                  </div>
+
+                  {isPromoSaved && (
+                    <div className="p-2.5 bg-emerald-100 border border-emerald-500 text-emerald-950 rounded-xl text-xs font-black flex items-center gap-2 animate-bounce">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>تم حفظ السعر ({editingRates.promoPaperPrice ?? 99} ج.س) ونشره لجميع العملاء فوراً! ✨</span>
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-slate-500">
-                    يمكنك تعديل هذا الرقم (مثلاً 99 أو 120 أو 85) وسيتحدث في الحال على الصفحة الرئيسية وزر الواتساب.
+                    يمكنك تعديل هذا الرقم (مثلاً 99 أو 120 أو 85) والضغط على الزر وسيتم حفظه في قاعدة البيانات السحابية والتحديث المباشر فوراً على كل شاشات العملاء.
                   </p>
                 </div>
 

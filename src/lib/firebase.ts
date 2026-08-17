@@ -9,7 +9,8 @@ import {
   deleteDoc, 
   onSnapshot, 
   query, 
-  getDocs
+  getDocs,
+  getDoc
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -21,7 +22,7 @@ import {
   User 
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
-import { PrintOrder, StudySheet } from '../types';
+import { PrintOrder, StudySheet, PricingRates } from '../types';
 import { UniversityInfo, AcademicLevel } from '../data/neelainData';
 
 // إعدادات Firebase المباشرة لمشروعك a4-sudan
@@ -974,6 +975,91 @@ export function subscribeToCloudDegreeTracks(callback: (tracks: any[]) => void):
     return () => {};
   }
 }
+
+/**
+ * Pricing Rates & Promo Campaign Global Firestore Integration
+ * Synchronizes pricing definitions and promo paper prices (e.g. 99 SDG) across all client devices in real-time.
+ */
+const PRICING_RATES_DOC_ID = 'pricing_rates_config';
+
+export async function savePricingRatesToCloud(rates: PricingRates): Promise<boolean> {
+  try {
+    if (!rates) return false;
+    const cleanRates = deepCleanForFirestore(rates);
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, PRICING_RATES_DOC_ID);
+    await setDoc(docRef, {
+      rates: cleanRates,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    // Broadcast across local browser tabs immediately
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_rates_channel');
+        bc.postMessage({ type: 'RATES_UPDATED', rates });
+        bc.close();
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save pricing rates error:', error);
+    return false;
+  }
+}
+
+export async function getPricingRatesFromCloud(): Promise<PricingRates | null> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, PRICING_RATES_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && data.rates && typeof data.rates.bwPerPage === 'number') {
+        return data.rates as PricingRates;
+      }
+    }
+    
+    // Fallback: collection scan
+    const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
+    let foundRates: PricingRates | null = null;
+    docSnap.forEach((d) => {
+      if (d.id === PRICING_RATES_DOC_ID) {
+        const data = d.data();
+        if (data && data.rates && typeof data.rates.bwPerPage === 'number') {
+          foundRates = data.rates as PricingRates;
+        }
+      }
+    });
+    return foundRates;
+  } catch (error) {
+    console.warn('Error fetching pricing rates from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudPricingRates(callback: (rates: PricingRates) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, PRICING_RATES_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && data.rates && typeof data.rates.bwPerPage === 'number') {
+            callback(data.rates as PricingRates);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore pricing rates listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore pricing rates subscribe warning:', error);
+    return () => {};
+  }
+}
+
 
 
 
