@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, FileText, Search, ShieldCheck, Phone } from 'lucide-react';
+import { Home, FileText, Search, ShieldCheck, Phone, LogOut } from 'lucide-react';
 import { User } from 'firebase/auth';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 
@@ -20,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onOpenAuthModal 
 }) => {
+  const isAdminView = currentView === 'admin';
+
   return (
     <header className="sticky top-0 z-50 bg-gradient-to-r from-emerald-900 via-emerald-800 to-emerald-900 text-white shadow-xl border-b border-emerald-700/80">
       {/* Top Banner Notice */}
@@ -65,105 +67,143 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Desktop Nav Items */}
-          <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2">
-            <button
-              onClick={() => setCurrentView('home')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                currentView === 'home'
-                  ? 'bg-amber-400 text-slate-950 shadow-sm'
-                  : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
-              }`}
-            >
-              <Home className="w-4 h-4" />
-              <span>الرئيسية</span>
-            </button>
+          {/* Desktop Nav Items / Exit button when in Admin */}
+          {isAdminView ? (
+            <div className="hidden lg:flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-emerald-950/70 border border-emerald-700/80 px-3.5 py-1.5 rounded-xl text-emerald-200 text-xs font-bold shadow-inner">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>أنت الآن في لوحة إدارة المكتبة</span>
+              </div>
+              <button
+                onClick={() => setCurrentView('sheets')}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg transition-all cursor-pointer border border-red-500 hover:scale-105 active:scale-95"
+              >
+                <LogOut className="w-4 h-4 rotate-180" />
+                <span>خروج من الإدارة</span>
+              </button>
+            </div>
+          ) : (
+            <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2">
+              <button
+                onClick={() => setCurrentView('home')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+                  currentView === 'home'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm'
+                    : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
+                }`}
+              >
+                <Home className="w-4 h-4" />
+                <span>الرئيسية</span>
+              </button>
 
-            <button
-              onClick={() => setCurrentView('sheets')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                currentView === 'sheets'
-                  ? 'bg-amber-400 text-slate-950 shadow-sm'
-                  : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>مكتبة A4 Sudan</span>
-            </button>
+              <button
+                onClick={() => setCurrentView('sheets')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+                  currentView === 'sheets'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm'
+                    : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>مكتبة A4 Sudan</span>
+              </button>
 
-            <button
-              onClick={() => setCurrentView('track')}
-              className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
-                currentView === 'track'
-                  ? 'bg-amber-400 text-slate-950 shadow-sm'
-                  : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
-              }`}
-            >
-              <Search className="w-4 h-4" />
-              <span>متابعة الطلبات</span>
-              {activeOrderCount > 0 && (
-                <span className="bg-red-600 text-white text-xs font-black px-2 py-0.5 rounded-full shadow-md animate-pulse">
-                  {activeOrderCount}
-                </span>
-              )}
-            </button>
-          </nav>
+              <button
+                onClick={() => setCurrentView('track')}
+                className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer ${
+                  currentView === 'track'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm'
+                    : 'text-emerald-100 hover:text-white hover:bg-emerald-900/80'
+                }`}
+              >
+                <Search className="w-4 h-4" />
+                <span>متابعة الطلبات</span>
+                {activeOrderCount > 0 && (
+                  <span className="bg-red-600 text-white text-xs font-black px-2 py-0.5 rounded-full shadow-md animate-pulse">
+                    {activeOrderCount}
+                  </span>
+                )}
+              </button>
+            </nav>
+          )}
 
-          {/* Admin Switcher Button */}
+          {/* Admin Switcher / Exit Button */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentView('admin')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border ${
-                currentView === 'admin'
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-xs'
-                  : 'border-emerald-700/80 text-emerald-200 hover:border-emerald-500 hover:text-white hover:bg-emerald-900/50'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-emerald-300" />
-              <span className="hidden sm:inline">إدارة المكتبة</span>
-              <span className="sm:hidden">الإدارة</span>
-            </button>
+            {isAdminView ? (
+              <button
+                onClick={() => setCurrentView('sheets')}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-black bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer border border-red-400 shadow-md hover:scale-105 active:scale-95"
+              >
+                <LogOut className="w-4 h-4 rotate-180" />
+                <span>خروج</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setCurrentView('admin')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border border-emerald-700/80 text-emerald-200 hover:border-emerald-500 hover:text-white hover:bg-emerald-900/50"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                <span className="hidden sm:inline">إدارة المكتبة</span>
+                <span className="sm:hidden">الإدارة</span>
+              </button>
+            )}
           </div>
 
         </div>
 
         {/* Mobile Navigation Row */}
-        <div className="flex lg:hidden overflow-x-auto py-2 border-t border-emerald-800/60 gap-2 no-scrollbar text-xs">
-          <button
-            onClick={() => setCurrentView('home')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
-              currentView === 'home' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>الرئيسية</span>
-          </button>
+        {isAdminView ? (
+          <div className="flex lg:hidden py-2 border-t border-emerald-800/60 justify-between items-center text-xs">
+            <div className="flex items-center gap-1.5 text-emerald-200 font-bold">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>لوحة تحكم وإدارة المكتبة</span>
+            </div>
+            <button
+              onClick={() => setCurrentView('sheets')}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-black bg-red-600 hover:bg-red-500 text-white shadow-sm transition-all cursor-pointer border border-red-400"
+            >
+              <LogOut className="w-3.5 h-3.5 rotate-180" />
+              <span>خروج</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex lg:hidden overflow-x-auto py-2 border-t border-emerald-800/60 gap-2 no-scrollbar text-xs">
+            <button
+              onClick={() => setCurrentView('home')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
+                currentView === 'home' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>الرئيسية</span>
+            </button>
 
-          <button
-            onClick={() => setCurrentView('sheets')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
-              currentView === 'sheets' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>المكتبة الشاملة</span>
-          </button>
+            <button
+              onClick={() => setCurrentView('sheets')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
+                currentView === 'sheets' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>المكتبة الشاملة</span>
+            </button>
 
-          <button
-            onClick={() => setCurrentView('track')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
-              currentView === 'track' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
-            }`}
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span>تتبع الطلب</span>
-            {activeOrderCount > 0 && (
-              <span className="bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-xs animate-pulse">
-                {activeOrderCount}
-              </span>
-            )}
-          </button>
-        </div>
+            <button
+              onClick={() => setCurrentView('track')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap font-bold cursor-pointer transition-all ${
+                currentView === 'track' ? 'bg-amber-400 text-slate-950 shadow-xs' : 'bg-emerald-900/80 text-emerald-100 hover:bg-emerald-800'
+              }`}
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>تتبع الطلب</span>
+              {activeOrderCount > 0 && (
+                <span className="bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-xs animate-pulse">
+                  {activeOrderCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

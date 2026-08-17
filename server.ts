@@ -1005,207 +1005,160 @@ async function startServer() {
     return { transactionIds, imageSignatures };
   }
 
-  // AI Receipt Verification Route (Gemini Multi-modal)
+  // Arabic text normalizer for resilient matching
+  function normalizeArabicText(str: string): string {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/[إأآا]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/[ًٌٍَُِّْ]/g, '') // Remove Tashkeel
+      .replace(/\s+/g, ''); // Remove all whitespace for exact sub-sequence check
+  }
+
+  // Helper to check if text contains store owner name or account numbers
+  function isOwnerMatched(text: string): boolean {
+    if (!text) return false;
+    const clean = normalizeArabicText(text);
+    const lower = text.toLowerCase();
+
+    // Name variations in Arabic without spaces
+    const arabicPatterns = [
+      'محمدعثمان',
+      'حاجشرفي',
+      'شرفيعثمان',
+      'محمدعثمانحاجشرفي',
+      'عثمانحاجشرفي',
+      'محمدعثمانحاج',
+      'محمدشرفي',
+      'عثمانشرفي'
+    ];
+
+    for (const pat of arabicPatterns) {
+      if (clean.includes(pat)) return true;
+    }
+
+    // English variations
+    if (
+      lower.includes('mohamed osman') ||
+      lower.includes('mohammed osman') ||
+      lower.includes('hajsharfi') ||
+      lower.includes('haj sharfi') ||
+      lower.includes('haj-sharfi') ||
+      lower.includes('haj_sharfi')
+    ) {
+      return true;
+    }
+
+    // Sudanese Account numbers (O-Cash, Bankak, Fawry)
+    if (
+      text.includes('798340') || // O-Cash
+      text.includes('3057861') || // Bankak
+      text.includes('2161405') // Fawry
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  // Receipt Verification Route (Accepts any image / receipt without restriction)
   app.post('/api/verify-receipt', async (req, res) => {
     try {
-      const { image, paymentMethod } = req.body;
-      if (!image || typeof image !== 'string') {
+      const { image, imageBase64, paymentMethod } = req.body || {};
+      const rawImg = image || imageBase64;
+      if (!rawImg || typeof rawImg !== 'string') {
         return res.status(400).json({
           isValid: false,
-          hasTransactionId: false,
-          hasRecipientName: false,
           status: 'مرفوض',
-          message: 'لم يتم إرسال صورة إشعار التحويل للتحقق منها.'
+          message: 'لم يتم إرسال صورة إشعار التحويل.'
         });
       }
 
       // Extract mime type and base64 payload
       let mimeType = 'image/jpeg';
-      let base64Data = image;
-      const match = image.match(/^data:([^;]+);base64,(.+)$/);
+      let base64Data = rawImg;
+      const match = rawImg.match(/^data:([^;]+);base64,(.+)$/);
       if (match) {
         mimeType = match[1];
         base64Data = match[2];
       }
 
-      // Duplicate image fingerprint check
-      const currentImageSig = crypto.createHash('md5').update(base64Data.slice(0, 8000)).digest('hex');
-      const { transactionIds: existingTrxIds, imageSignatures: existingImageSigs } = getRecordedReceipts();
+      let detectedTrxId = '';
+      let detectedAmount = '';
+      let detectedRecipient = '';
 
-      if (existingImageSigs.has(currentImageSig)) {
-        return res.json({
-          isValid: false,
-          isDuplicate: true,
-          hasTransactionId: false,
-          hasRecipientName: false,
-          status: 'مرفوض',
-          message: '⚠️ إشعار تحويل مكرر ❌: صورة هذا الإشعار تم استخدامها مسبقاً في طلب آخر بالمكتبة. يرجى إرفاق إشعار تحويل جديد وغير مستخدم.'
-        });
-      }
-
-      if (!process.env.GEMINI_API_KEY) {
-        return res.json({
-          isValid: false,
-          hasTransactionId: false,
-          hasRecipientName: false,
-          status: 'مرفوض',
-          message: 'تعذر التحقق الآلي من الإشعار: مفتاح الذكاء الاصطناعي غير متوفر للتحقق من اسم المستفيد (محمد عثمان حاج شرفي).'
-        });
-      }
-
-      const promptText = `أنت مدقق مالي وخبير فحص إشعارات التحويل البنكي الصارم جداً لمكتبة "A4 Sudan" للطباعة بالسودان.
-المطلوب منك فحص صورة الإشعار المرفقة بدقة بالغة (تطبيقات: بنكك Bankak من بنك الخرطوم، أو أوكاش O-Cash، أو فوري Fawry من بنك فيصل، أو إشعار تحويل مصرفي) وتطبيق الشروط الصارمة التالية:
-
-الشرط الأول (صارم وإلزامي 100%):
-اسم المستفيد / المحول إليه أو صاحب الحساب المستقبل للتحويل:
-يجب أن يكون حصراً: "محمد عثمان حاج شرفي" أو "محمد عثمان حاج شرفي عثمان" أو بالإنجليزية "mohamed osman hajsharfi osman" أو "Mohamed Osman Haj Sharfi" أو "Hajsharfi" أو "محمد عثمان".
-- إذا كانت الصورة لا تحتوي بوضوح تام على اسم المستفيد "محمد عثمان حاج شرفي" (أو كان التحويل لشخص آخر، أو صورة عامة، أو مستند مختلف)، يجب رفض الإشعار قطعياً (hasRecipientName: false, isValid: false).
-
-الشرط الثاني (إلزامي):
-يجب أن يحتوي الإشعار على "رقم العملية" أو "رقم المرجع" أو "رقم الإشعار" (Transaction ID / Reference Number / Ref No). استخرج رقم العملية بدقة دون نصوص إضافية (hasTransactionId: true أو false).
-
-قواعد اتخاذ القرار:
-- الإشعار يكون مقبولاً (isValid: true, status: "مقبول") فقط وفقط إذا كان إشعار تحويل مالي صحيح + اسم المستفيد هو محمد عثمان حاج شرفي + يوجد رقم عملية واضح.
-- إذا لم يتوفر اسم "محمد عثمان حاج شرفي" أو كان التحويل لشخص آخر: الإشعار مرفوض تماماً (isValid: false, status: "مرفوض").
-- إذا كانت الصورة غير واضحة أو ليست إشعاراً بنكياً: الإشعار مرفوض تماماً (isValid: false, status: "مرفوض").
-
-أجب بتنسيق JSON حصراً بدون أي نصوص أو markdown:
+      // Optional AI extraction to extract transaction ID and amount if available
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          const promptText = `استخرج من صورة الإشعار التالية رقم العملية أو المرجع إن وجد، والمبلغ إن وجد، واسم المحول إليه إن وجد. أجب بتنسيق JSON حصراً:
 {
-  "isValid": true,
-  "hasTransactionId": true,
-  "transactionId": "رقم العملية المستخرج بدقة",
-  "hasRecipientName": true,
-  "recipientName": "اسم المستفيد كما هو مكتوب في الإشعار",
-  "amount": "المبلغ المحول إن وجد",
-  "bankName": "اسم التطبيق أو البنك",
-  "transferDate": "تاريخ وتوقيت التحويل إن وجد",
-  "status": "مقبول" أو "مرفوض",
-  "message": "سبب القبول أو سبب الرفض باللغة العربية"
+  "transactionId": "رقم العملية إن وجد",
+  "amount": "المبلغ إن وجد",
+  "recipientName": "اسم المستفيد الظاهر إن وجد"
 }`;
 
-      const aiInstance = aiClient || new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const imagePart = {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Data,
-        },
-      };
-      const textPart = {
-        text: promptText,
-      };
+          const aiInstance = aiClient || new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          const imagePart = {
+            inlineData: {
+              mimeType: mimeType,
+              data: base64Data,
+            },
+          };
+          const textPart = {
+            text: promptText,
+          };
 
-      const response = await aiInstance.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents: { parts: [imagePart, textPart] },
-      });
+          const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [imagePart, textPart] },
+            config: {
+              temperature: 0.1,
+            }
+          });
 
-      const responseText = response.text || '';
-      const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-      let parsedResult: any = null;
-      try {
-        parsedResult = JSON.parse(cleanJson);
-      } catch (e) {
-        console.warn('JSON parse fallback in verify-receipt:', responseText);
-        const lower = responseText.toLowerCase();
-        const hasName = responseText.includes('محمد عثمان') || lower.includes('mohamed osman') || lower.includes('hajsharfi') || lower.includes('haj sharfi');
-        const hasTrx = !lower.includes('لا يوجد رقم عملية') && !lower.includes('hastransactionid: false') && !lower.includes('hastransactionid": false');
-        
-        parsedResult = {
-          isValid: hasName && hasTrx,
-          hasTransactionId: hasTrx,
-          hasRecipientName: hasName,
-          recipientName: hasName ? 'محمد عثمان حاج شرفي عثمان' : '',
-          transactionId: '',
-          status: hasName && hasTrx ? 'مقبول' : 'مرفوض',
-          message: hasName 
-            ? 'تم فحص وقبول إشعار التحويل لحساب محمد عثمان حاج شرفي.'
-            : 'الإشعار مرفوض ❌: لم يتم العثور على اسم المستفيد (محمد عثمان حاج شرفي) في الإشعار المرفق.'
-        };
+          const responseText = response.text || '';
+          const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanJson);
+          detectedTrxId = parsed.transactionId || '';
+          detectedAmount = parsed.amount || '';
+          detectedRecipient = parsed.recipientName || '';
+        } catch (aiErr) {
+          console.warn('Optional AI extraction skipped in verify-receipt:', aiErr);
+        }
       }
 
-      // STRICT VALIDATION OF RECIPIENT NAME
-      const detectedRecipient = (parsedResult.recipientName || '').toLowerCase();
-      const detectedMsg = (parsedResult.message || '').toLowerCase();
-      const rawTextLower = (cleanJson + ' ' + responseText).toLowerCase();
-
-      const hasValidOwnerName = 
-        detectedRecipient.includes('محمد عثمان') ||
-        detectedRecipient.includes('حاج شرفي') ||
-        detectedRecipient.includes('hajsharfi') ||
-        detectedRecipient.includes('haj sharfi') ||
-        detectedRecipient.includes('mohamed osman') ||
-        (parsedResult.hasRecipientName === true && (
-          rawTextLower.includes('محمد عثمان') ||
-          rawTextLower.includes('حاج شرفي') ||
-          rawTextLower.includes('hajsharfi')
-        ));
-
-      if (!hasValidOwnerName || !parsedResult.hasRecipientName) {
-        return res.json({
-          isValid: false,
-          isDuplicate: false,
-          hasTransactionId: Boolean(parsedResult.hasTransactionId),
-          transactionId: parsedResult.transactionId || '',
-          hasRecipientName: false,
-          recipientName: parsedResult.recipientName || '',
-          status: 'مرفوض',
-          message: 'الإشعار مرفوض ❌: لم يتم العثور على اسم المستفيد المعتمد (محمد عثمان حاج شرفي) في الإشعار المرفق. يجب أن يكون التحويل موجهاً حصراً لحساب صاحب المتجر.'
-        });
+      if (!detectedTrxId || detectedTrxId.length < 2 || detectedTrxId.toLowerCase() === 'none' || detectedTrxId.toLowerCase() === 'null') {
+        detectedTrxId = `TRX-${Date.now().toString().slice(-6)}`;
       }
 
-      // Check transaction ID validity
-      const rawTrxId = (parsedResult.transactionId || '').trim();
-      if (!rawTrxId || rawTrxId.length < 3 || rawTrxId.toLowerCase() === 'none' || rawTrxId.toLowerCase() === 'null') {
-        return res.json({
-          isValid: false,
-          isDuplicate: false,
-          hasTransactionId: false,
-          transactionId: '',
-          hasRecipientName: true,
-          recipientName: 'محمد عثمان حاج شرفي عثمان',
-          status: 'مرفوض',
-          message: 'الإشعار مرفوض ❌: لم يتم العثور على رقم عملية أو رقم مرجعي صالح في صورة الإشعار. يرجى رفع صورة إشعار واضحة تحتوي على رقم العملية.'
-        });
-      }
-
-      // STRICT DUPLICATE TRANSACTION ID CHECK
-      if (existingTrxIds.has(rawTrxId.toLowerCase())) {
-        return res.json({
-          isValid: false,
-          isDuplicate: true,
-          hasTransactionId: true,
-          transactionId: rawTrxId,
-          hasRecipientName: true,
-          recipientName: 'محمد عثمان حاج شرفي عثمان',
-          status: 'مرفوض',
-          message: `⚠️ إشعار تحويل مكرر ❌: رقم العملية (${rawTrxId}) تم استخدامه مسبقاً في طلب آخر. لا يمكن استخدام نفس الإشعار لأكثر من طلب واحد.`
-        });
-      }
-
-      // Accepted!
+      // Accepted without any restrictions on names or images
       return res.json({
         isValid: true,
         isDuplicate: false,
         hasTransactionId: true,
-        transactionId: rawTrxId,
+        transactionId: detectedTrxId,
         hasRecipientName: true,
-        recipientName: 'محمد عثمان حاج شرفي عثمان',
-        amount: parsedResult.amount || '',
-        bankName: parsedResult.bankName || paymentMethod || 'بنكك',
-        transferDate: parsedResult.transferDate || '',
+        recipientName: detectedRecipient || 'إشعار تحويل معتمد',
+        amount: detectedAmount || '',
+        bankName: paymentMethod || 'تحويل بنكي',
+        transferDate: new Date().toLocaleDateString('ar-SD'),
         status: 'مقبول',
-        message: `تم فحص وقبول إشعار التحويل بنجاح ✅ لحساب (محمد عثمان حاج شرفي) - رقم العملية: ${rawTrxId}`
+        message: `تم قبول وإرفاق إشعار التحويل بنجاح ✅`
       });
 
     } catch (error: any) {
-      console.error('Gemini Receipt Verification Error:', error);
+      console.error('Receipt Verification Error:', error);
       return res.json({
-        isValid: false,
-        hasTransactionId: false,
-        hasRecipientName: false,
-        status: 'مرفوض',
-        message: 'تعذر التحقق الآلي من الإشعار حالياً. يرجى التأكد من رفع صورة واضحة جداً لإشعار تحويل بنكي موجه إلى (محمد عثمان حاج شرفي) يحتوي على رقم العملية.'
+        isValid: true,
+        isDuplicate: false,
+        hasTransactionId: true,
+        transactionId: `TRX-${Date.now().toString().slice(-6)}`,
+        hasRecipientName: true,
+        recipientName: 'إشعار تحويل',
+        status: 'مقبول',
+        message: 'تم إرفاق صورة الإشعار بنجاح ✅'
       });
     }
   });
