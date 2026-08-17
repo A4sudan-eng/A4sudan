@@ -136,7 +136,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       const data = await res.json();
       setReceiptVerificationResult(data);
 
-      if (data.isValid) {
+      if (data.isValid && data.hasRecipientName && !data.isDuplicate) {
         setBankakProofUrl(compressedDataUrl);
         setReceiptSuccess(
           data.message || 'تم فحص وقبول الإشعار بنجاح! تم التحويل لحساب محمد عثمان حاج شرفي.'
@@ -146,20 +146,21 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
         }
         setReceiptError(null);
       } else {
-        // Strict verification failed: Reject
+        // Strict verification failed: Reject completely
         setBankakProofUrl('');
         setReceiptError(
-          data.message || 'الإشعار المرفق غير صالح: يجب أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي).'
+          data.message || 'الإشعار المرفق غير صالح ❌: يجب أن يحتوي الإشعار على رقم العملية واسم المستفيد (محمد عثمان حاج شرفي).'
         );
         setReceiptSuccess(null);
         if (receiptInputRef.current) receiptInputRef.current.value = '';
       }
     } catch (err) {
       console.error('Receipt verification network error:', err);
-      // Fallback
-      setBankakProofUrl(compressedDataUrl);
-      setReceiptSuccess('تم إرفاق صورة الإشعار بنجاح (ستتم مراجعته من قبل إدارة المكتبة).');
-      setReceiptError(null);
+      // Do not accept on network failure: Reject strictly
+      setBankakProofUrl('');
+      setReceiptError('تعذر التحقق من الإشعار آلياً: يرجى التأكد من اتصال الإنترنت ورفع صورة واضحة لإشعار تحويل موجه إلى (محمد عثمان حاج شرفي).');
+      setReceiptSuccess(null);
+      if (receiptInputRef.current) receiptInputRef.current.value = '';
     } finally {
       setIsVerifyingReceipt(false);
     }

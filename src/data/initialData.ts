@@ -580,7 +580,7 @@ export const SAMPLE_STUDY_SHEETS: StudySheet[] = [
     downloadCount: 390,
     recommendedColor: 'bw',
     recommendedBinding: 'spiral_plastic',
-    priceEstimate: 6300,
+    priceEstimate: 4700,
     isAvailable: true,
   },
   {
@@ -1103,12 +1103,58 @@ export function removeStoredDeletedSheetId(id: string): void {
   } catch (e) {}
 }
 
+export function getCanonicalSheetPrice(sheet: Partial<StudySheet>): number {
+  if (!sheet) return 5000;
+  
+  // 1. Direct ID match in SAMPLE_STUDY_SHEETS
+  if (sheet.id) {
+    const byId = SAMPLE_STUDY_SHEETS.find(s => s.id.toLowerCase() === sheet.id!.toLowerCase());
+    if (byId && typeof byId.priceEstimate === 'number' && byId.priceEstimate > 0) {
+      return byId.priceEstimate;
+    }
+  }
+
+  // 2. Keyword & Subject Matching for Semester 8 Accounting (المحاسبة - الفصل 8)
+  const title = (sheet.title || '').toLowerCase();
+  const subject = (sheet.subject || '').toLowerCase();
+  const fullText = `${title} ${subject}`;
+
+  if (sheet.semester === 8 || fullText.includes('فصل 8') || fullText.includes('الفصل 8') || fullText.includes('الفصل الثامن')) {
+    if (fullText.includes('تكاليف') || fullText.includes('نظم')) return 7500;
+    if (fullText.includes('مراجعة') || fullText.includes('تدقيق')) return 6000;
+    if (fullText.includes('نفط') || fullText.includes('غاز')) return 6800;
+    if (fullText.includes('إدارية') || fullText.includes('ادارية')) return 9500;
+    if (fullText.includes('جدوى') || fullText.includes('مشروعات')) return 4700;
+    if (fullText.includes('بحوث') || fullText.includes('عمليات')) return 7200;
+    if (fullText.includes('استراتيجية')) return 7500;
+  }
+
+  // 3. Fallback Keyword Matching across all semesters
+  if (fullText.includes('تكاليف') && fullText.includes('نظم')) return 7500;
+  if (fullText.includes('مراجعة') && (fullText.includes('إلكترونية') || fullText.includes('الكترونية') || fullText.includes('تدقيق'))) return 6000;
+  if (fullText.includes('نفط') && fullText.includes('غاز')) return 6800;
+  if (fullText.includes('إدارية 2') || fullText.includes('ادارية 2') || fullText.includes('إدارية2') || fullText.includes('ادارية2')) return 9500;
+  if (fullText.includes('جدوى') || fullText.includes('مشروعات')) return 4700;
+
+  // 4. Stored custom price if valid
+  if (typeof sheet.priceEstimate === 'number' && sheet.priceEstimate > 0) {
+    return sheet.priceEstimate;
+  }
+
+  return 5000;
+}
+
 export function getStoredSheets(): StudySheet[] {
   try {
     const saved = localStorage.getItem('a4_sheets');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: StudySheet) => ({
+          ...s,
+          priceEstimate: getCanonicalSheetPrice(s),
+        }));
+      }
     }
   } catch (e) {}
   return SAMPLE_STUDY_SHEETS;

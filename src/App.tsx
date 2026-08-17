@@ -9,7 +9,7 @@ import { ApkDownloadModal } from './components/ApkDownloadModal';
 import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon } from './types';
-import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS, getStoredDeletedIds, saveStoredDeletedId, getStoredDeletedSheetIds, saveStoredDeletedSheetId, removeStoredDeletedSheetId } from './data/initialData';
+import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS, getStoredDeletedIds, saveStoredDeletedId, getStoredDeletedSheetIds, saveStoredDeletedSheetId, removeStoredDeletedSheetId, getStoredSheets, getCanonicalSheetPrice } from './data/initialData';
 import { 
   saveOrderToCloud, 
   updateOrderInCloud, 
@@ -46,13 +46,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'home' | 'order' | 'sheets' | 'track' | 'admin'>('sheets');
   const [rates, setRates] = useState<PricingRates>(DEFAULT_PRICING_RATES);
   const [orders, setOrders] = useState<PrintOrder[]>(INITIAL_ORDERS);
-  const [sheets, setSheets] = useState<StudySheet[]>(() => {
-    try {
-      const raw = localStorage.getItem('a4_sheets');
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    return SAMPLE_STUDY_SHEETS;
-  });
+  const [sheets, setSheets] = useState<StudySheet[]>(() => getStoredSheets());
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
     try {
       const raw = localStorage.getItem('a4_coupons');
@@ -279,31 +273,31 @@ export default function App() {
           }
         });
 
-        // 2. Populate/merge from prev state
+        // 2. Populate/merge custom sheets from prev state (preserving user-created sheets)
         prev.forEach(s => { 
           if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
-            map.set(s.id.toLowerCase(), s); 
+            map.set(s.id.toLowerCase(), { ...s, priceEstimate: getCanonicalSheetPrice(s) }); 
           }
         });
 
         // 3. Populate/merge from localSheets
         localSheets.forEach(s => { 
           if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
-            map.set(s.id.toLowerCase(), s); 
+            map.set(s.id.toLowerCase(), { ...s, priceEstimate: getCanonicalSheetPrice(s) }); 
           }
         });
 
         // 4. Populate/merge from serverSheets
         serverSheets.forEach(s => { 
           if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
-            map.set(s.id.toLowerCase(), s); 
+            map.set(s.id.toLowerCase(), { ...s, priceEstimate: getCanonicalSheetPrice(s) }); 
           }
         });
 
-        // 5. Populate/merge from cloudSheets (Cloud Firestore - HIGHEST PRIORITY SOURCE OF TRUTH)
+        // 5. Populate/merge from cloudSheets
         cloudSheets.forEach(s => { 
           if (s && s.id && !currentDeletedSheets.has(s.id.toLowerCase())) {
-            map.set(s.id.toLowerCase(), s); 
+            map.set(s.id.toLowerCase(), { ...s, priceEstimate: getCanonicalSheetPrice(s) }); 
           }
         });
 

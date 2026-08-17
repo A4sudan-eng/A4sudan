@@ -6,7 +6,7 @@ import {
   X, MessageCircle, FileUp, AlertCircle, FileQuestion, FileX, Lock, EyeOff
 } from 'lucide-react';
 import { StudySheet, PrintFileOptions, PricingRates } from '../types';
-import { SAMPLE_STUDY_SHEETS, DEFAULT_PRICING_RATES } from '../data/initialData';
+import { SAMPLE_STUDY_SHEETS, DEFAULT_PRICING_RATES, getCanonicalSheetPrice } from '../data/initialData';
 import { formatSDG, calculateFilePrice } from '../utils/pricing';
 import neelainLogo from '../assets/images/neelain_exact_logo_1785951359550.jpg';
 import { NEELAIN_COLLEGES, ACADEMIC_LEVELS, getStoredUniversities, UniversityInfo, getStoredAcademicLevels, AcademicLevel, getStoredDegreeTracks, DegreeTrackInfo } from '../data/neelainData';
@@ -109,23 +109,10 @@ export const SheetsHub: React.FC<SheetsHubProps> = ({ sheets, rates, onSelectShe
     };
   }, []);
 
-  // Helper to dynamically calculate sheet price based on sheet custom priceEstimate or active rates
+  // Helper to dynamically calculate sheet price based on sheet custom priceEstimate or canonical prices
   const getSheetPrice = (sheet: StudySheet): number => {
     if (!sheet) return 0;
-    if (typeof sheet.priceEstimate === 'number' && sheet.priceEstimate > 0) {
-      return sheet.priceEstimate;
-    }
-    return calculateFilePrice(
-      sheet.pageCount || 40,
-      sheet.recommendedColor || 'bw',
-      'a4',
-      'double',
-      '70g',
-      sheet.recommendedBinding || 'spiral_plastic',
-      1,
-      activeRates,
-      2
-    );
+    return getCanonicalSheetPrice(sheet);
   };
 
   // Dynamic Universities list from localStorage / defaults

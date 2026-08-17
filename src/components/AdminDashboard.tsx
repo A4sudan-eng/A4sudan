@@ -1472,23 +1472,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       batchNumber: sheetBatch,
       semester: sheetSemester,
       subject: sheetSubject.trim(),
-      pageCount: sheetPages,
+      pageCount: sheetPages || 30,
       authorOrLecturer: sheetAuthor.trim() || 'دكتور المادة',
       fileUrl: '#',
       downloadCount: 1,
       recommendedColor: sheetColor,
       recommendedBinding: sheetBinding,
-      priceEstimate: sheetPrice || calculateFilePrice(
-        sheetPages, 
-        sheetColor, 
-        'a4', 
-        'double', 
-        '70g', 
-        sheetBinding, 
-        1, 
-        rates, 
-        2
-      ),
+      priceEstimate: sheetPrice > 0 ? sheetPrice : 5000,
       isAvailable: sheetAvailable,
     };
 
@@ -2292,25 +2282,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         body: JSON.stringify(valid),
       });
     } catch (err) {}
-
-    // Recalculate sheets
-    if (sheets && sheets.length > 0 && onBatchSaveSheets) {
-      const updatedSheets = sheets.map(s => ({
-        ...s,
-        priceEstimate: calculateFilePrice(
-          s.pageCount || 40,
-          s.recommendedColor || 'bw',
-          'a4',
-          'double',
-          '70g',
-          s.recommendedBinding || 'spiral_plastic',
-          1,
-          valid,
-          2
-        )
-      }));
-      onBatchSaveSheets(updatedSheets);
-    }
     
     setIsPromoSaved(true);
     setIsSaved(true);
@@ -2333,25 +2304,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
     onUpdateRates(valid);
     savePricingRatesToCloud(valid).catch(() => {});
-
-    // Recalculate and batch save sheets
-    if (sheets && sheets.length > 0 && onBatchSaveSheets) {
-      const updatedSheets = sheets.map(s => ({
-        ...s,
-        priceEstimate: calculateFilePrice(
-          s.pageCount || 40,
-          s.recommendedColor || 'bw',
-          'a4',
-          'double',
-          '70g',
-          s.recommendedBinding || 'spiral_plastic',
-          1,
-          valid,
-          2
-        )
-      }));
-      onBatchSaveSheets(updatedSheets);
-    }
 
     try {
       const res = await fetch('/api/pricing', {
@@ -4144,14 +4096,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-800 font-bold mb-1">عدد الصفحات *</label>
+                  <label className="block text-slate-800 font-bold mb-1">عدد الصفحات (اختياري)</label>
                   <input
                     type="number"
                     min="1"
                     max="1000"
-                    required
-                    value={sheetPages}
-                    onChange={e => setSheetPages(parseInt(e.target.value) || 1)}
+                    value={sheetPages || ''}
+                    onChange={e => setSheetPages(parseInt(e.target.value) || 0)}
+                    placeholder="اختياري"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 font-extrabold text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                   />
                 </div>
@@ -4182,7 +4134,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     />
                     <span className="absolute left-3 top-3.5 text-xs text-emerald-700 font-bold pointer-events-none">ج.س</span>
                   </div>
-                  <span className="text-[11px] text-emerald-700 block mt-1">محسوب تلقائياً حسب عدد الصفحات والتغليف</span>
+                  <span className="text-[11px] text-emerald-700 block mt-1">سعر بيع الشيت الثابت والمعتمد للطلاب</span>
                 </div>
 
                 <div>
@@ -4227,29 +4179,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const updated = sheets.map(s => ({
-                        ...s,
-                        priceEstimate: calculateFilePrice(
-                          s.pageCount || 40,
-                          s.recommendedColor || 'bw',
-                          'a4',
-                          'double',
-                          '70g',
-                          s.recommendedBinding || 'spiral_plastic',
-                          1,
-                          rates,
-                          2
-                        )
-                      }));
-                      onBatchSaveSheets(updated);
-                      savePricingRatesToCloud(rates).catch(() => {});
-                      triggerToast(`✅ تمت إعادة تسعير ومزامنة جميع شيتات الكلية (${sheets.length}) وفق تسعيرة الورق (${rates.bwPerPage} ج.س)! 🚀`);
+                      onBatchSaveSheets(sheets);
+                      triggerToast(`✅ تمت مزامنة وحفظ جميع أسعار الشيتات المعتمدة (${sheets.length} شيت) بالسحابة وقاعدة البيانات بنجاح! 🚀`);
                     }}
                     className="bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs px-3 py-2 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                    title="تحديث ومزامنة كافة الشيتات مع تسعيرة الورق الحالية"
+                    title="مزامنة وحفظ جميع أسعار الشيتات المعتمدة في السحابة وقاعدة البيانات"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
-                    <span>مزامنة تسعيرة كل الشيتات ({rates.bwPerPage} ج.س/ورقة)</span>
+                    <span>مزامنة وحفظ أسعار كافة الشيتات ({sheets.length}) ☁️</span>
                   </button>
                 )}
 
@@ -4311,18 +4248,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredSheets.map((st) => {
-                    const fallbackPrice = calculateFilePrice(
-                      st.pageCount || 40,
-                      st.recommendedColor || 'bw',
-                      'a4',
-                      'double',
-                      '70g',
-                      st.recommendedBinding || 'spiral_plastic',
-                      1,
-                      rates,
-                      2
-                    );
-                    const currentCalculatedPrice = st.priceEstimate || fallbackPrice;
+                    const currentCalculatedPrice = (typeof st.priceEstimate === 'number' && st.priceEstimate > 0) 
+                      ? st.priceEstimate 
+                      : 5000;
                     const editedPrice = quickPrices[st.id];
                     const hasPriceChanged = editedPrice !== undefined && editedPrice !== currentCalculatedPrice;
 
@@ -4563,27 +4491,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-800 font-bold mb-1">عدد الصفحات *</label>
+                  <label className="block text-slate-800 font-bold mb-1">عدد الصفحات (اختياري)</label>
                   <input
                     type="number"
                     min="1"
-                    required
-                    value={editingSheet.pageCount}
+                    value={editingSheet.pageCount || ''}
                     onChange={e => {
-                      const pages = parseInt(e.target.value) || 1;
-                      const printedSheets = Math.ceil(pages / 2);
+                      const pages = parseInt(e.target.value) || 0;
                       setEditingSheet({ 
                         ...editingSheet, 
-                        pageCount: pages,
-                        priceEstimate: printedSheets * (rates.bwPerPage || 200) + (rates.bindingPrice?.spiral_plastic || 1200)
+                        pageCount: pages
                       });
                     }}
+                    placeholder="اختياري"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 font-black text-slate-900"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-800 font-bold mb-1">سعر الشيت الأصلي (SDG) *</label>
+                  <label className="block text-slate-800 font-bold mb-1">سعر الشيت المباشر (SDG) *</label>
                   <input
                     type="number"
                     min="100"
