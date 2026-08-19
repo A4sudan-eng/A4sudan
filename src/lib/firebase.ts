@@ -22,7 +22,7 @@ import {
   User 
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
-import { PrintOrder, StudySheet, PricingRates } from '../types';
+import { PrintOrder, StudySheet, PricingRates, Coupon } from '../types';
 import { UniversityInfo, AcademicLevel } from '../data/neelainData';
 
 // إعدادات Firebase المباشرة لمشروعك a4-sudan
@@ -1056,6 +1056,86 @@ export function subscribeToCloudPricingRates(callback: (rates: PricingRates) => 
     );
   } catch (error) {
     console.warn('Firestore pricing rates subscribe warning:', error);
+    return () => {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Real-time Cloud Firestore Coupons Management & Synchronization
+// ---------------------------------------------------------------------------
+export const COUPONS_DOC_ID = 'system_coupons_config';
+
+export async function saveCouponsToCloud(couponsList: Coupon[]): Promise<boolean> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, COUPONS_DOC_ID);
+    const sanitized = couponsList.map(c => ({
+      id: c.id || `coupon-${Date.now()}`,
+      code: c.code.trim().toUpperCase(),
+      discountPercentage: Number(c.discountPercentage) || 10,
+      targetBatch: c.targetBatch || 'all',
+      isActive: c.isActive !== false,
+      notes: c.notes || '',
+      createdAt: c.createdAt || new Date().toISOString(),
+    }));
+
+    await setDoc(docRef, {
+      coupons: sanitized,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('a4_coupons', JSON.stringify(sanitized));
+        window.dispatchEvent(new CustomEvent('a4_coupons_updated', { detail: sanitized }));
+        const bc = new BroadcastChannel('a4_coupons_channel');
+        bc.postMessage({ type: 'COUPONS_UPDATED', coupons: sanitized });
+        bc.close();
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save coupons error:', error);
+    return false;
+  }
+}
+
+export async function getCouponsFromCloud(): Promise<Coupon[] | null> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, COUPONS_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.coupons) && data.coupons.length > 0) {
+        return data.coupons as Coupon[];
+      }
+    }
+    return null;
+  } catch (error) {
+    console.warn('Error fetching coupons from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudCoupons(callback: (coupons: Coupon[]) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, COUPONS_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.coupons)) {
+            callback(data.coupons as Coupon[]);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore coupons listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore coupons subscribe warning:', error);
     return () => {};
   }
 }

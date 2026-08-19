@@ -5,9 +5,9 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
-import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, DELIVERY_ZONES, getCanonicalSheetPrice } from './src/data/initialData.js';
+import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, DELIVERY_ZONES, getCanonicalSheetPrice, INITIAL_COUPONS } from './src/data/initialData.js';
 import { SUDAN_UNIVERSITIES, UniversityInfo, ACADEMIC_LEVELS, AcademicLevel } from './src/data/neelainData.js';
-import { PrintOrder, PricingRates, StudySheet, DeliveryZone } from './src/types.js';
+import { PrintOrder, PricingRates, StudySheet, DeliveryZone, Coupon } from './src/types.js';
 
 async function startServer() {
   const app = express();
@@ -37,6 +37,7 @@ async function startServer() {
   const DELIVERY_ZONES_FILE_PATH = path.join(process.cwd(), 'a4_delivery_zones_store.json');
   const ACADEMIC_LEVELS_FILE_PATH = path.join(process.cwd(), 'a4_academic_levels_store.json');
   const PRICING_RATES_FILE_PATH = path.join(process.cwd(), 'a4_pricing_rates_store.json');
+  const COUPONS_FILE_PATH = path.join(process.cwd(), 'a4_coupons_store.json');
 
   function loadOrdersFromStore(): PrintOrder[] {
     try {
@@ -189,6 +190,29 @@ async function startServer() {
     }
   }
 
+  function loadCouponsFromStore(): Coupon[] {
+    try {
+      if (fs.existsSync(COUPONS_FILE_PATH)) {
+        const raw = fs.readFileSync(COUPONS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent coupons file:', err);
+    }
+    return [...INITIAL_COUPONS];
+  }
+
+  function saveCouponsToStore(list: Coupon[]) {
+    try {
+      fs.writeFileSync(COUPONS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent coupons file:', err);
+    }
+  }
+
   let ordersList: PrintOrder[] = loadOrdersFromStore();
   let sheetsList: StudySheet[] = loadSheetsFromStore();
   let deletedOrdersList: PrintOrder[] = loadDeletedOrdersFromStore();
@@ -197,6 +221,7 @@ async function startServer() {
   let academicLevelsList: AcademicLevel[] = loadAcademicLevelsFromStore();
   let visitorsList: any[] = loadVisitorsFromStore();
   let deliveryZonesList: DeliveryZone[] = loadDeliveryZonesFromStore();
+  let couponsList: Coupon[] = loadCouponsFromStore();
 
   function loadSheetsFromStore(): StudySheet[] {
     try {
@@ -471,6 +496,75 @@ async function startServer() {
     deliveryZonesList = [...DELIVERY_ZONES];
     saveDeliveryZonesToStore(deliveryZonesList);
     res.json({ success: true, zones: deliveryZonesList });
+  });
+
+  // Coupons API
+  app.get('/api/coupons', (req, res) => {
+    res.json(couponsList);
+  });
+
+  app.post('/api/coupons', (req, res) => {
+    const coupon: Coupon = req.body;
+    if (!coupon || !coupon.code || coupon.discountPercentage === undefined) {
+      return res.status(400).json({ error: 'بيانات الكوبون غير مكتملة' });
+    }
+    if (!coupon.id) {
+      coupon.id = `coupon-${Date.now()}`;
+    }
+    coupon.code = coupon.code.trim().toUpperCase();
+    coupon.createdAt = coupon.createdAt || new Date().toISOString();
+    if (coupon.isActive === undefined) coupon.isActive = true;
+
+    const existingIdx = couponsList.findIndex(c => c.id === coupon.id || c.code.toUpperCase() === coupon.code.toUpperCase());
+    if (existingIdx !== -1) {
+      couponsList[existingIdx] = { ...couponsList[existingIdx], ...coupon };
+    } else {
+      couponsList.unshift(coupon);
+    }
+    saveCouponsToStore(couponsList);
+    res.status(201).json({ success: true, coupon, coupons: couponsList });
+  });
+
+  app.put('/api/coupons/:id', (req, res) => {
+    const { id } = req.params;
+    const updates: Partial<Coupon> = req.body;
+    const index = couponsList.findIndex(c => c.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'الكوبون غير موجود' });
+    }
+    couponsList[index] = { ...couponsList[index], ...updates };
+    saveCouponsToStore(couponsList);
+    res.json({ success: true, coupon: couponsList[index], coupons: couponsList });
+  });
+
+  app.delete('/api/coupons/:id', (req, res) => {
+    const { id } = req.params;
+    couponsList = couponsList.filter(c => c.id !== id);
+    saveCouponsToStore(couponsList);
+    res.json({ success: true, coupons: couponsList });
+  });
+
+  app.post('/api/coupons/batch-sync', (req, res) => {
+    if (Array.isArray(req.body)) {
+      couponsList = req.body;
+      saveCouponsToStore(couponsList);
+      return res.json({ success: true, coupons: couponsList });
+    }
+    res.status(400).json({ error: 'Invalid coupons batch data' });
+  });
+
+  app.post('/api/coupons/validate', (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ valid: false, error: 'الرجاء إدخال رمز الكوبون' });
+    const codeUpper = String(code).trim().toUpperCase();
+    const matched = couponsList.find(c => c.code.toUpperCase() === codeUpper);
+    if (!matched) {
+      return res.status(404).json({ valid: false, error: 'كوبون التخفيض غير صحيح أو غير موجود' });
+    }
+    if (!matched.isActive) {
+      return res.status(400).json({ valid: false, error: 'هذا الكوبون غير متاح أو منتهي الصلاحية حالياً' });
+    }
+    return res.json({ valid: true, coupon: matched });
   });
 
   // Orders API

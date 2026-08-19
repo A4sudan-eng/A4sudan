@@ -427,7 +427,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   };
 
   // Coupon handlers
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     setCouponError('');
     setCouponSuccess('');
     if (!couponCodeInput.trim()) {
@@ -436,7 +436,39 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
     }
 
     const codeUpper = couponCodeInput.trim().toUpperCase();
-    const matched = (coupons || []).find(c => c.code.toUpperCase() === codeUpper);
+    
+    // 1. Search in props
+    let matched = (coupons || []).find(c => c.code.toUpperCase() === codeUpper);
+
+    // 2. Search in localStorage
+    if (!matched) {
+      try {
+        const storedRaw = localStorage.getItem('a4_coupons');
+        if (storedRaw) {
+          const parsed = JSON.parse(storedRaw);
+          if (Array.isArray(parsed)) {
+            matched = parsed.find((c: Coupon) => c.code.toUpperCase() === codeUpper);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Fallback: Query backend API validation in real-time
+    if (!matched) {
+      try {
+        const res = await fetch('/api/coupons/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: codeUpper }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.valid && data.coupon) {
+            matched = data.coupon;
+          }
+        }
+      } catch (e) {}
+    }
 
     if (!matched) {
       setCouponError('كوبون التخفيض غير صحيح أو غير موجود');
@@ -566,7 +598,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       paymentStatus: 'pending',
       status: 'pending',
       createdAt: new Date().toISOString(),
-      estimatedCompletionTime: 'خلال 2 - 4 ساعات اليوم',
+      estimatedCompletionTime: 'خلال 24 ساعة',
       notes: orderNotes,
     };
 

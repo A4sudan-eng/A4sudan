@@ -203,6 +203,39 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <span>تتبع حالة طلبك</span>
               </button>
             </div>
+
+            {/* Social Media Follow Quick Links in Hero */}
+            <div className="pt-3 border-t border-emerald-800/60 flex flex-wrap items-center gap-2.5 text-xs">
+              <span className="text-emerald-200 font-bold text-[11px] sm:text-xs">تابعنا على:</span>
+              
+              {/* Facebook Pill */}
+              <a
+                href="https://www.facebook.com/A4SUDAN"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white font-bold px-3 py-1.5 rounded-xl transition-transform hover:scale-105 shadow-sm text-xs"
+                title="متابعة صفحة فيسبوك A4SUDAN"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span>فيسبوك (A4SUDAN)</span>
+              </a>
+
+              {/* TikTok Pill */}
+              <a
+                href="https://www.tiktok.com/@A4SUDAN"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 bg-slate-950 hover:bg-black text-white font-bold px-3 py-1.5 rounded-xl border border-slate-700 transition-transform hover:scale-105 shadow-sm text-xs"
+                title="متابعة حساب تيك توك A4SUDAN"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+                </svg>
+                <span>تيك توك (A4SUDAN)</span>
+              </a>
+            </div>
           </div>
 
           {/* Right Column: Animated Interactive Offer Card */}
@@ -352,6 +385,123 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </motion.div>
       </section>
+
+      {/* 3.5. FOLLOW OUR OFFICIAL SOCIAL MEDIA PAGES */}
+      <motion.section
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+        className="bg-gradient-to-br from-slate-900 via-slate-950 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 border border-emerald-800/50 shadow-xl relative overflow-hidden"
+      >
+        {/* Subtle Background Glows */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-rose-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 space-y-6">
+          {/* Header */}
+          <div className="text-center max-w-2xl mx-auto space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-800/60 border border-emerald-600/60 text-amber-300 text-xs font-bold shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span>مجتمع منصة A4 SUDAN الرسمي</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-white">
+              تابع صفحاتنا على <span className="text-[#1877F2]">فيسبوك</span> و <span className="text-pink-400">تيك توك</span>
+            </h2>
+            <p className="text-xs sm:text-sm text-emerald-100/80 leading-relaxed font-medium">
+              انضم إلينا باليوزر <span className="font-mono text-amber-300 font-extrabold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700">@A4SUDAN</span> لمتابعة أحدث الشيتات الجامعية، عروض التخفيض، وكواليس الطباعة السريعة.
+            </p>
+          </div>
+
+          {/* Social Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            {/* Facebook Card */}
+            <motion.a
+              href="https://www.facebook.com/A4SUDAN"
+              target="_blank"
+              rel="noopener noreferrer"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="bg-slate-900/90 hover:bg-slate-850 rounded-2xl p-5 sm:p-6 border border-[#1877F2]/40 hover:border-[#1877F2] transition-all shadow-lg hover:shadow-[#1877F2]/20 flex flex-col justify-between space-y-4 group cursor-pointer"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center shadow-md shadow-[#1877F2]/40 group-hover:scale-110 transition-transform">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-blue-300 transition-colors">
+                        صفحة فيسبوك الرسمية
+                      </h3>
+                      <span className="text-xs font-mono font-bold text-blue-400">
+                        @A4SUDAN
+                      </span>
+                    </div>
+                  </div>
+                  <span className="bg-blue-900/60 text-blue-300 text-[11px] font-bold px-2.5 py-1 rounded-full border border-blue-700/50">
+                    Facebook
+                  </span>
+                </div>
+
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                  تابع آخر إعلانات الشيتات، تنبيهات بداية السمستر، والمنشورات والمناقشات الدراسية للجامعات السودانية.
+                </p>
+              </div>
+
+              <div className="bg-[#1877F2] hover:bg-[#166fe5] text-white font-black py-2.5 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all">
+                <span>متابعة صفحتنا على فيسبوك (A4SUDAN)</span>
+                <ArrowLeft className="w-4 h-4" />
+              </div>
+            </motion.a>
+
+            {/* TikTok Card */}
+            <motion.a
+              href="https://www.tiktok.com/@A4SUDAN"
+              target="_blank"
+              rel="noopener noreferrer"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="bg-slate-900/90 hover:bg-slate-850 rounded-2xl p-5 sm:p-6 border border-pink-500/40 hover:border-pink-500 transition-all shadow-lg hover:shadow-pink-500/20 flex flex-col justify-between space-y-4 group cursor-pointer"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-black border border-slate-700 text-white flex items-center justify-center shadow-md relative overflow-hidden group-hover:scale-110 transition-transform">
+                      {/* Neon glow effect */}
+                      <span className="absolute inset-0 bg-gradient-to-tr from-cyan-500/30 to-pink-500/30" />
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 relative z-10 text-white">
+                        <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base sm:text-lg font-black text-white group-hover:text-pink-300 transition-colors">
+                        حساب تيك توك الرسمي
+                      </h3>
+                      <span className="text-xs font-mono font-bold text-pink-400">
+                        @A4SUDAN
+                      </span>
+                    </div>
+                  </div>
+                  <span className="bg-pink-950/60 text-pink-300 text-[11px] font-bold px-2.5 py-1 rounded-full border border-pink-800/50">
+                    TikTok
+                  </span>
+                </div>
+
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+                  شاهد مقاطع حية لكواليس الطباعة، عروض التوصيل، وكوبونات الخصم والجوائز الحصرية عبر تيك توك.
+                </p>
+              </div>
+
+              <div className="bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-black py-2.5 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition-all">
+                <span>متابعة حسابنا على تيك توك (A4SUDAN)</span>
+                <ArrowLeft className="w-4 h-4" />
+              </div>
+            </motion.a>
+          </div>
+        </div>
+      </motion.section>
 
       {/* 4. WHY CHOOSE A4 SUDAN */}
       <section className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">

@@ -36,7 +36,10 @@ import {
   subscribeToCloudDegreeTracks,
   savePricingRatesToCloud,
   getPricingRatesFromCloud,
-  subscribeToCloudPricingRates
+  subscribeToCloudPricingRates,
+  saveCouponsToCloud,
+  getCouponsFromCloud,
+  subscribeToCloudCoupons
 } from './lib/firebase';
 import { getStoredUniversities, saveStoredUniversities, getStoredAcademicLevels, saveStoredAcademicLevels } from './data/neelainData';
 import { recordVisit } from './utils/analyticsTracker';
@@ -555,12 +558,36 @@ export default function App() {
         })
       : null;
 
+    // Subscribe to real-time coupons updates from Firebase Firestore
+    const unsubscribeCloudCoupons = (typeof subscribeToCloudCoupons === 'function')
+      ? subscribeToCloudCoupons((cloudCoupons) => {
+          if (cloudCoupons && Array.isArray(cloudCoupons) && cloudCoupons.length > 0) {
+            setCoupons(cloudCoupons);
+            try {
+              localStorage.setItem('a4_coupons', JSON.stringify(cloudCoupons));
+            } catch (e) {}
+          }
+        })
+      : null;
+
+    // Initial fetch of coupons from server
+    fetch('/api/coupons')
+      .then(res => res.ok ? res.json() : [])
+      .then((serverCoupons: Coupon[]) => {
+        if (Array.isArray(serverCoupons) && serverCoupons.length > 0) {
+          setCoupons(serverCoupons);
+          try { localStorage.setItem('a4_coupons', JSON.stringify(serverCoupons)); } catch (e) {}
+        }
+      })
+      .catch(() => {});
+
     // BroadcastChannel listener for instant cross-tab order deletion and creation
     let broadcastChannel: BroadcastChannel | null = null;
     let universitiesBroadcastChannel: BroadcastChannel | null = null;
     let academicLevelsBroadcastChannel: BroadcastChannel | null = null;
     let degreeTracksBroadcastChannel: BroadcastChannel | null = null;
     let ratesBroadcastChannel: BroadcastChannel | null = null;
+    let couponsBroadcastChannel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         broadcastChannel = new BroadcastChannel('a4_orders_channel');
@@ -637,6 +664,17 @@ export default function App() {
           }
         };
       } catch (e) {}
+      try {
+        couponsBroadcastChannel = new BroadcastChannel('a4_coupons_channel');
+        couponsBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'COUPONS_UPDATED' && Array.isArray(event?.data?.coupons)) {
+            setCoupons(event.data.coupons);
+            try {
+              localStorage.setItem('a4_coupons', JSON.stringify(event.data.coupons));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
     }
 
     // CustomEvent and Storage listener for instant cross-component updates
@@ -652,6 +690,13 @@ export default function App() {
     };
     window.addEventListener('a4_pricing_rates_updated', handleRatesUpdatedEvent);
 
+    const handleCouponsUpdatedEvent = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setCoupons(e.detail);
+      }
+    };
+    window.addEventListener('a4_coupons_updated', handleCouponsUpdatedEvent);
+
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === 'a4_pricing_rates' && e.newValue) {
         try {
@@ -662,6 +707,13 @@ export default function App() {
               ...parsed,
               promoPaperPrice: parsed.promoPaperPrice ?? 99
             });
+          }
+        } catch (err) {}
+      } else if (e.key === 'a4_coupons' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setCoupons(parsed);
           }
         } catch (err) {}
       }
@@ -684,7 +736,9 @@ export default function App() {
       if (unsubscribeCloudLevels) unsubscribeCloudLevels();
       if (unsubscribeCloudDegreeTracks) unsubscribeCloudDegreeTracks();
       if (unsubscribeCloudPricing) unsubscribeCloudPricing();
+      if (unsubscribeCloudCoupons) unsubscribeCloudCoupons();
       window.removeEventListener('a4_pricing_rates_updated', handleRatesUpdatedEvent);
+      window.removeEventListener('a4_coupons_updated', handleCouponsUpdatedEvent);
       window.removeEventListener('storage', handleStorageEvent);
       if (broadcastChannel) {
         try { broadcastChannel.close(); } catch (e) {}
@@ -701,17 +755,37 @@ export default function App() {
       if (ratesBroadcastChannel) {
         try { ratesBroadcastChannel.close(); } catch (e) {}
       }
+      if (couponsBroadcastChannel) {
+        try { couponsBroadcastChannel.close(); } catch (e) {}
+      }
     };
   }, []);
 
-  // Auto refresh orders and sheets periodically every 3 seconds to instantly catch new client orders & sheets
+  // Auto refresh orders, sheets, and coupons periodically every 3 seconds to instantly catch new updates
   useEffect(() => {
     fetchOrders();
     fetchSheets();
+    fetch('/api/coupons')
+      .then(res => res.ok ? res.json() : [])
+      .then(serverCoupons => {
+        if (Array.isArray(serverCoupons) && serverCoupons.length > 0) {
+          setCoupons(serverCoupons);
+          try { localStorage.setItem('a4_coupons', JSON.stringify(serverCoupons)); } catch (e) {}
+        }
+      })
+      .catch(() => {});
 
     const interval = setInterval(() => {
       fetchOrders();
       fetchSheets();
+      fetch('/api/coupons')
+        .then(res => res.ok ? res.json() : [])
+        .then(serverCoupons => {
+          if (Array.isArray(serverCoupons) && serverCoupons.length > 0) {
+            setCoupons(serverCoupons);
+          }
+        })
+        .catch(() => {});
     }, 3000);
 
     return () => clearInterval(interval);
@@ -975,27 +1049,103 @@ export default function App() {
   };
 
   const handleAddCoupon = (newCoupon: Coupon) => {
+    let updatedList: Coupon[] = [];
     setCoupons(prev => {
-      const updated = [newCoupon, ...prev];
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      const sanitized: Coupon = {
+        ...newCoupon,
+        code: newCoupon.code.trim().toUpperCase(),
+        isActive: newCoupon.isActive !== false,
+        discountPercentage: Number(newCoupon.discountPercentage) || 10,
+        createdAt: newCoupon.createdAt || new Date().toISOString(),
+      };
+      // Prevent duplicate codes
+      const filtered = prev.filter(c => c.code.toUpperCase() !== sanitized.code.toUpperCase() && c.id !== sanitized.id);
+      updatedList = [sanitized, ...filtered];
+      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
+
+    // Sync to Cloud Firestore
+    saveCouponsToCloud(updatedList).catch(() => {});
+
+    // Sync to backend API
+    fetch('/api/coupons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCoupon),
+    }).catch(() => {});
+
+    // Broadcast across tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_coupons_channel');
+        bc.postMessage({ type: 'COUPONS_UPDATED', coupons: updatedList });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleDeleteCoupon = (couponId: string) => {
+    let updatedList: Coupon[] = [];
     setCoupons(prev => {
-      const updated = prev.filter(c => c.id !== couponId);
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      updatedList = prev.filter(c => c.id !== couponId);
+      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
+
+    // Sync to Cloud Firestore
+    saveCouponsToCloud(updatedList).catch(() => {});
+
+    // Sync to backend API
+    fetch(`/api/coupons/${couponId}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+
+    // Broadcast across tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_coupons_channel');
+        bc.postMessage({ type: 'COUPONS_UPDATED', coupons: updatedList });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleToggleCouponStatus = (couponId: string) => {
+    let updatedList: Coupon[] = [];
+    let updatedTarget: Coupon | undefined;
     setCoupons(prev => {
-      const updated = prev.map(c => c.id === couponId ? { ...c, isActive: !c.isActive } : c);
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updated)); } catch (e) {}
-      return updated;
+      updatedList = prev.map(c => {
+        if (c.id === couponId) {
+          updatedTarget = { ...c, isActive: !c.isActive };
+          return updatedTarget;
+        }
+        return c;
+      });
+      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
+      return updatedList;
     });
+
+    // Sync to Cloud Firestore
+    saveCouponsToCloud(updatedList).catch(() => {});
+
+    // Sync to backend API
+    if (updatedTarget) {
+      fetch(`/api/coupons/${couponId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedTarget),
+      }).catch(() => {});
+    }
+
+    // Broadcast across tabs
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const bc = new BroadcastChannel('a4_coupons_channel');
+        bc.postMessage({ type: 'COUPONS_UPDATED', coupons: updatedList });
+        bc.close();
+      } catch (e) {}
+    }
   };
 
   const handleSelectSheetForPrint = (options: Partial<PrintFileOptions> | Partial<PrintFileOptions>[]) => {

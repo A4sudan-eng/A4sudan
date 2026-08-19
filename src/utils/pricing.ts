@@ -109,40 +109,6 @@ export function getEstimatedDeliveryText(order: {
     return 'جاهز للاستلام الآن بالمكتبة 🏪';
   }
 
-  const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
-  const pages = order.totalPages || (order.files ? order.files.reduce((acc, f) => acc + ((f.pageCount || 1) * (f.copies || 1)), 0) : 12);
-  
-  // Base processing speed: 20 mins setup + 1 min per 15 pages
-  let processMins = 20 + Math.ceil(pages / 15);
-
-  // Extra time if binding required
-  const hasBinding = order.files?.some(f => f.binding && f.binding !== 'none');
-  if (hasBinding) {
-    processMins += 20;
-  }
-
-  // Delivery time vs pickup
-  if (order.deliveryMethod === 'delivery') {
-    processMins += 40; // Delivery dispatch time
-  }
-
-  const estDate = new Date(createdDate.getTime() + processMins * 60 * 1000);
-  const now = new Date();
-  
-  // Format Arabic time
-  const timeStr = estDate.toLocaleTimeString('ar-SD', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const diffMins = Math.round((estDate.getTime() - now.getTime()) / (1000 * 60));
-
-  if (diffMins <= 5 && diffMins >= -60) {
-    return `خلال 10 دقائق (${timeStr})`;
-  } else if (diffMins > 5 && diffMins < 60) {
-    return `خلال ${diffMins} دقيقة تقريباً (${timeStr})`;
-  } else if (diffMins >= 60 && diffMins < 180) {
-    const hours = Math.floor(diffMins / 60);
-    const remMins = diffMins % 60;
-    return `خلال ${hours} ساعة و ${remMins} دقيقة (${timeStr})`;
-  } else {
-    return `متوقع اليوم الساعة ${timeStr}`;
-  }
+  return 'خلال 24 ساعة';
 }
 

@@ -70,16 +70,12 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Desktop Nav Items / Exit button when in Admin */}
           {isAdminView ? (
             <div className="hidden lg:flex items-center gap-3">
-              <div className="flex items-center gap-2 bg-emerald-950/70 border border-emerald-700/80 px-3.5 py-1.5 rounded-xl text-emerald-200 text-xs font-bold shadow-inner">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>أنت الآن في لوحة إدارة المكتبة</span>
-              </div>
               <button
                 onClick={() => setCurrentView('sheets')}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-black bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg transition-all cursor-pointer border border-red-500 hover:scale-105 active:scale-95"
+                className="flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-black bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white shadow-lg transition-all cursor-pointer border border-red-400 hover:scale-105 active:scale-95"
               >
                 <LogOut className="w-4 h-4 rotate-180" />
-                <span>خروج من الإدارة</span>
+                <span>خروج</span>
               </button>
             </div>
           ) : (
@@ -127,17 +123,9 @@ export const Header: React.FC<HeaderProps> = ({
             </nav>
           )}
 
-          {/* Admin Switcher / Exit Button */}
-          <div className="flex items-center gap-2">
-            {isAdminView ? (
-              <button
-                onClick={() => setCurrentView('sheets')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-black bg-red-600 hover:bg-red-500 text-white transition-all cursor-pointer border border-red-400 shadow-md hover:scale-105 active:scale-95"
-              >
-                <LogOut className="w-4 h-4 rotate-180" />
-                <span>خروج</span>
-              </button>
-            ) : (
+          {/* Admin Switcher Button (only visible when not in admin) */}
+          {!isAdminView && (
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setCurrentView('admin')}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border border-emerald-700/80 text-emerald-200 hover:border-emerald-500 hover:text-white hover:bg-emerald-900/50"
@@ -146,8 +134,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline">إدارة المكتبة</span>
                 <span className="sm:hidden">الإدارة</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
         </div>
 
