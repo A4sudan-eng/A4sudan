@@ -1049,30 +1049,31 @@ export default function App() {
   };
 
   const handleAddCoupon = (newCoupon: Coupon) => {
-    let updatedList: Coupon[] = [];
-    setCoupons(prev => {
-      const sanitized: Coupon = {
-        ...newCoupon,
-        code: newCoupon.code.trim().toUpperCase(),
-        isActive: newCoupon.isActive !== false,
-        discountPercentage: Number(newCoupon.discountPercentage) || 10,
-        createdAt: newCoupon.createdAt || new Date().toISOString(),
-      };
-      // Prevent duplicate codes
-      const filtered = prev.filter(c => c.code.toUpperCase() !== sanitized.code.toUpperCase() && c.id !== sanitized.id);
-      updatedList = [sanitized, ...filtered];
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
-      return updatedList;
-    });
+    const sanitized: Coupon = {
+      ...newCoupon,
+      id: newCoupon.id || `coupon-${Date.now()}`,
+      code: (newCoupon.code || '').trim().toUpperCase(),
+      isActive: newCoupon.isActive !== false,
+      discountPercentage: Number(newCoupon.discountPercentage) || 10,
+      createdAt: newCoupon.createdAt || new Date().toISOString(),
+    };
 
-    // Sync to Cloud Firestore
+    // Calculate updated list synchronously without empty array race condition
+    const currentList = Array.isArray(coupons) && coupons.length > 0 ? coupons : INITIAL_COUPONS;
+    const filtered = currentList.filter(c => c.code.toUpperCase() !== sanitized.code.toUpperCase() && c.id !== sanitized.id);
+    const updatedList = [sanitized, ...filtered];
+
+    setCoupons(updatedList);
+    try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
+
+    // Sync to Cloud Firestore with full non-empty list
     saveCouponsToCloud(updatedList).catch(() => {});
 
     // Sync to backend API
     fetch('/api/coupons', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCoupon),
+      body: JSON.stringify(sanitized),
     }).catch(() => {});
 
     // Broadcast across tabs
@@ -1086,12 +1087,11 @@ export default function App() {
   };
 
   const handleDeleteCoupon = (couponId: string) => {
-    let updatedList: Coupon[] = [];
-    setCoupons(prev => {
-      updatedList = prev.filter(c => c.id !== couponId);
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
-      return updatedList;
-    });
+    const currentList = Array.isArray(coupons) && coupons.length > 0 ? coupons : INITIAL_COUPONS;
+    const updatedList = currentList.filter(c => c.id !== couponId);
+
+    setCoupons(updatedList);
+    try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
 
     // Sync to Cloud Firestore
     saveCouponsToCloud(updatedList).catch(() => {});
@@ -1112,19 +1112,18 @@ export default function App() {
   };
 
   const handleToggleCouponStatus = (couponId: string) => {
-    let updatedList: Coupon[] = [];
     let updatedTarget: Coupon | undefined;
-    setCoupons(prev => {
-      updatedList = prev.map(c => {
-        if (c.id === couponId) {
-          updatedTarget = { ...c, isActive: !c.isActive };
-          return updatedTarget;
-        }
-        return c;
-      });
-      try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
-      return updatedList;
+    const currentList = Array.isArray(coupons) && coupons.length > 0 ? coupons : INITIAL_COUPONS;
+    const updatedList = currentList.map(c => {
+      if (c.id === couponId) {
+        updatedTarget = { ...c, isActive: !c.isActive };
+        return updatedTarget;
+      }
+      return c;
     });
+
+    setCoupons(updatedList);
+    try { localStorage.setItem('a4_coupons', JSON.stringify(updatedList)); } catch (e) {}
 
     // Sync to Cloud Firestore
     saveCouponsToCloud(updatedList).catch(() => {});

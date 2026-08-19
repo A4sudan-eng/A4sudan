@@ -1381,7 +1381,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setNewCouponCode('');
     setNewCouponDiscount(15);
     setNewCouponNotes('');
-    alert(`تم إنشاء كود الخصم "${created.code}" بنسبة ${created.discountPercentage}% بنجاح! 🎉`);
+    triggerToast(`تم إنشاء كود الخصم "${created.code}" بنسبة ${created.discountPercentage}% بنجاح! 🎉`);
   };
 
   // Sheet Management Form & Filter States

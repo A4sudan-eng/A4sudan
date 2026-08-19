@@ -1067,10 +1067,13 @@ export const COUPONS_DOC_ID = 'system_coupons_config';
 
 export async function saveCouponsToCloud(couponsList: Coupon[]): Promise<boolean> {
   try {
+    if (!Array.isArray(couponsList)) {
+      return false;
+    }
     const docRef = doc(db, UNIVERSITIES_COLLECTION, COUPONS_DOC_ID);
     const sanitized = couponsList.map(c => ({
       id: c.id || `coupon-${Date.now()}`,
-      code: c.code.trim().toUpperCase(),
+      code: (c.code || '').trim().toUpperCase(),
       discountPercentage: Number(c.discountPercentage) || 10,
       targetBatch: c.targetBatch || 'all',
       isActive: c.isActive !== false,
@@ -1125,7 +1128,7 @@ export function subscribeToCloudCoupons(callback: (coupons: Coupon[]) => void): 
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data && Array.isArray(data.coupons)) {
+          if (data && Array.isArray(data.coupons) && data.coupons.length > 0) {
             callback(data.coupons as Coupon[]);
           }
         }
