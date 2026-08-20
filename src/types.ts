@@ -171,6 +171,13 @@ export interface VisitorRecord {
   sessionId: string;
 }
 
+export interface AdminSecurityConfig {
+  adminPin: string;
+  adminEmail: string;
+  recoveryQuestions?: { question: string; answer: string }[];
+  updatedAt?: string;
+}
+
 export interface DayStatItem {
   date: string;
   dayName: string;

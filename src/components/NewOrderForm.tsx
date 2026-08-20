@@ -11,9 +11,9 @@ import { calculateFilePrice, formatSDG } from '../utils/pricing';
 import { countPdfPages } from '../utils/pdfCounter';
 import { DELIVERY_ZONES } from '../data/initialData';
 import { getStoredDeliveryZones, fetchServerDeliveryZones } from '../utils/deliveryManager';
-import { saveOrderToCloud, auth } from '../lib/firebase';
+import { saveOrderToCloud, auth, subscribeToCloudUniversities, getUniversitiesFromCloud } from '../lib/firebase';
 import { DeliveryRatesGuide } from './DeliveryRatesGuide';
-import { SUDAN_UNIVERSITIES } from '../data/neelainData';
+import { SUDAN_UNIVERSITIES, UniversityInfo, getStoredUniversities } from '../data/neelainData';
 import logoImg from '../assets/images/a4_sudan_green_logo_1785943554845.jpg';
 import bankakLogo from '../assets/images/bankak_logo_1786006078601.jpg';
 import okashLogo from '../assets/images/okash_logo_1786006090002.jpg';
@@ -22,11 +22,12 @@ import fawryLogo from '../assets/images/fawry_logo_1786006099638.jpg';
 interface NewOrderFormProps {
   rates: PricingRates;
   coupons?: Coupon[];
+  deliveryZones?: DeliveryZone[];
   onOrderCreated: (order: PrintOrder) => void;
   preloadedFiles?: Partial<PrintFileOptions>[];
 }
 
-export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [], onOrderCreated, preloadedFiles }) => {
+export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [], deliveryZones: propDeliveryZones, onOrderCreated, preloadedFiles }) => {
   const [files, setFiles] = useState<PrintFileOptions[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -61,7 +62,71 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedAccNum, setCopiedAccNum] = useState<string | null>(null);
   const [showDeliveryGuideModal, setShowDeliveryGuideModal] = useState(false);
-  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => propDeliveryZones || getStoredDeliveryZones());
+  const [sudanUniversities, setSudanUniversities] = useState<UniversityInfo[]>(() => getStoredUniversities());
+
+  React.useEffect(() => {
+    // Initial fetch from Cloud Firestore & Backend API
+    getUniversitiesFromCloud().then(cloudUnis => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUniversities(cloudUnis);
+        try { localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis)); } catch (e) {}
+      } else {
+        fetch('/api/universities')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+              setSudanUniversities(data);
+              try { localStorage.setItem('a4_universities_data', JSON.stringify(data)); } catch (e) {}
+            }
+          })
+          .catch(() => {});
+      }
+    }).catch(() => {});
+
+    // Real-time Firestore subscription for universities
+    const unsubscribeUnis = subscribeToCloudUniversities((cloudUnis) => {
+      if (cloudUnis && Array.isArray(cloudUnis) && cloudUnis.length > 0) {
+        setSudanUniversities(cloudUnis);
+        try { localStorage.setItem('a4_universities_data', JSON.stringify(cloudUnis)); } catch (e) {}
+      }
+    });
+
+    const handleUnisLocalUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setSudanUniversities(e.detail);
+      } else {
+        setSudanUniversities(getStoredUniversities());
+      }
+    };
+    window.addEventListener('a4_universities_updated', handleUnisLocalUpdate);
+
+    let unisBc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        unisBc = new BroadcastChannel('a4_universities_channel');
+        unisBc.onmessage = (event) => {
+          if (event?.data?.type === 'UNIVERSITIES_UPDATED' && Array.isArray(event?.data?.list)) {
+            setSudanUniversities(event.data.list);
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      if (unsubscribeUnis) unsubscribeUnis();
+      window.removeEventListener('a4_universities_updated', handleUnisLocalUpdate);
+      if (unisBc) {
+        try { unisBc.close(); } catch (e) {}
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (propDeliveryZones && Array.isArray(propDeliveryZones)) {
+      setDeliveryZones(propDeliveryZones);
+    }
+  }, [propDeliveryZones]);
 
   React.useEffect(() => {
     fetchServerDeliveryZones().then(zones => {
@@ -73,13 +138,33 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
     const handleDeliveryZonesUpdated = (e: any) => {
       if (e.detail && Array.isArray(e.detail.zones)) {
         setDeliveryZones(e.detail.zones);
+      } else if (e.detail && Array.isArray(e.detail)) {
+        setDeliveryZones(e.detail);
       } else {
         setDeliveryZones(getStoredDeliveryZones());
       }
     };
 
     window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
-    return () => window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+
+    let deliveryZonesBroadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        deliveryZonesBroadcastChannel = new BroadcastChannel('a4_delivery_zones_channel');
+        deliveryZonesBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'DELIVERY_ZONES_UPDATED' && Array.isArray(event?.data?.zones)) {
+            setDeliveryZones(event.data.zones);
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+      if (deliveryZonesBroadcastChannel) {
+        try { deliveryZonesBroadcastChannel.close(); } catch (e) {}
+      }
+    };
   }, []);
 
   // Coupon state & handlers
@@ -598,7 +683,7 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
       paymentStatus: 'pending',
       status: 'pending',
       createdAt: new Date().toISOString(),
-      estimatedCompletionTime: 'خلال 24 ساعة',
+      estimatedCompletionTime: 'جاري تحديد موعد الاستلام بعد الطلب',
       notes: orderNotes,
     };
 
@@ -1136,12 +1221,9 @@ export const NewOrderForm: React.FC<NewOrderFormProps> = ({ rates, coupons = [],
                 className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-slate-900 text-sm"
               />
               <datalist id="sudan-universities-datalist">
-                {SUDAN_UNIVERSITIES.map(u => (
+                {sudanUniversities.filter(u => u.active !== false).map(u => (
                   <option key={u.id} value={u.name} />
                 ))}
-                <option value="جامعة الخرطوم" />
-                <option value="جامعة الجزيرة" />
-                <option value="جامعة أزهري" />
               </datalist>
             </div>
 

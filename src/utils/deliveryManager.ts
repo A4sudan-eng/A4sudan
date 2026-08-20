@@ -375,37 +375,69 @@ export function getStoredDeliveryZones(): DeliveryZone[] {
   return DEFAULT_ENRICHED_DELIVERY_ZONES;
 }
 
-// Save delivery zones to storage and server
+// Save delivery zones to storage, Cloud Firestore, BroadcastChannel, and server
 export async function saveStoredDeliveryZones(zones: DeliveryZone[]): Promise<void> {
   const normalized = zones.map(normalizeDeliveryZone);
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(STORAGE_KEY_DELIVERY_ZONES, JSON.stringify(normalized));
       window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: normalized } }));
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('a4_delivery_zones_channel');
+        bc.postMessage({ type: 'DELIVERY_ZONES_UPDATED', zones: normalized });
+        bc.close();
+      }
     } catch (e) {
       console.error('Error saving delivery zones to localStorage:', e);
     }
   }
 
+  // Sync to Cloud Firestore
+  try {
+    const { saveDeliveryZonesToCloud } = await import('../lib/firebase');
+    await saveDeliveryZonesToCloud(normalized);
+  } catch (e) {
+    console.warn('Could not sync delivery zones to Cloud Firestore:', e);
+  }
+
+  // Sync to server API
   try {
     await fetch('/api/delivery-zones', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(normalized),
+      body: JSON.stringify({ zones: normalized }),
     });
   } catch (e) {
     console.warn('Could not sync delivery zones to server:', e);
   }
 }
 
-// Fetch from server if available, and update local cache
+// Fetch from Cloud Firestore & server if available, and update local cache
 export async function fetchServerDeliveryZones(): Promise<DeliveryZone[]> {
   try {
+    // 1. Try Cloud Firestore first for real-time consistency across all devices & browsers
+    const { getDeliveryZonesFromCloud } = await import('../lib/firebase');
+    const cloudZones = await getDeliveryZonesFromCloud();
+    if (cloudZones && Array.isArray(cloudZones) && cloudZones.length > 0) {
+      const normalized = cloudZones.map(normalizeDeliveryZone);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_DELIVERY_ZONES, JSON.stringify(normalized));
+        window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: normalized } }));
+      }
+      return normalized;
+    }
+  } catch (e) {
+    console.warn('Failed to fetch delivery zones from Cloud Firestore:', e);
+  }
+
+  try {
+    // 2. Fallback to Server API
     const res = await fetch('/api/delivery-zones');
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const normalized = data.map(normalizeDeliveryZone);
+      const list = Array.isArray(data) ? data : (data && Array.isArray(data.zones) ? data.zones : []);
+      if (list.length > 0) {
+        const normalized = list.map(normalizeDeliveryZone);
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEY_DELIVERY_ZONES, JSON.stringify(normalized));
           window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: normalized } }));

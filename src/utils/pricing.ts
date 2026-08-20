@@ -95,7 +95,7 @@ export function getEstimatedDeliveryText(order: {
   status?: string; 
   estimatedCompletionTime?: string 
 }): string {
-  if (order.estimatedCompletionTime) {
+  if (order.estimatedCompletionTime && order.estimatedCompletionTime.trim() !== '') {
     return order.estimatedCompletionTime;
   }
   
@@ -109,6 +109,6 @@ export function getEstimatedDeliveryText(order: {
     return 'جاهز للاستلام الآن بالمكتبة 🏪';
   }
 
-  return 'خلال 24 ساعة';
+  return 'جاري تحديد موعد الاستلام بعد الطلب';
 }
 

@@ -22,7 +22,7 @@ import {
   User 
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
-import { PrintOrder, StudySheet, PricingRates, Coupon } from '../types';
+import { PrintOrder, StudySheet, PricingRates, Coupon, DeliveryZone } from '../types';
 import { UniversityInfo, AcademicLevel } from '../data/neelainData';
 
 // إعدادات Firebase المباشرة لمشروعك a4-sudan
@@ -787,6 +787,13 @@ export async function saveUniversitiesToCloud(universities: UniversityInfo[]): P
 export async function getUniversitiesFromCloud(): Promise<UniversityInfo[] | null> {
   try {
     const docRef = doc(db, UNIVERSITIES_COLLECTION, UNIVERSITIES_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.list) && data.list.length > 0) {
+        return data.list as UniversityInfo[];
+      }
+    }
     const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
     let foundList: UniversityInfo[] | null = null;
     docSnap.forEach((d) => {
@@ -862,6 +869,13 @@ export async function saveAcademicLevelsToCloud(levels: AcademicLevel[]): Promis
 export async function getAcademicLevelsFromCloud(): Promise<AcademicLevel[] | null> {
   try {
     const docRef = doc(db, UNIVERSITIES_COLLECTION, ACADEMIC_LEVELS_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.list) && data.list.length > 0) {
+        return data.list as AcademicLevel[];
+      }
+    }
     const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
     let foundList: AcademicLevel[] | null = null;
     docSnap.forEach((d) => {
@@ -936,6 +950,14 @@ export async function saveDegreeTracksToCloud(tracks: any[]): Promise<boolean> {
 
 export async function getDegreeTracksFromCloud(): Promise<any[] | null> {
   try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DEGREE_TRACKS_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.list) && data.list.length > 0) {
+        return data.list;
+      }
+    }
     const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
     let foundList: any[] | null = null;
     docSnap.forEach((d) => {
@@ -1139,6 +1161,106 @@ export function subscribeToCloudCoupons(callback: (coupons: Coupon[]) => void): 
     );
   } catch (error) {
     console.warn('Firestore coupons subscribe warning:', error);
+    return () => {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Real-time Cloud Firestore Delivery Zones Management & Synchronization
+// ---------------------------------------------------------------------------
+export const DELIVERY_ZONES_DOC_ID = 'system_delivery_zones_config';
+
+export async function saveDeliveryZonesToCloud(zonesList: DeliveryZone[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(zonesList)) {
+      return false;
+    }
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DELIVERY_ZONES_DOC_ID);
+    const sanitized = zonesList.map(z => ({
+      id: z.id || `zone-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      state: z.state || 'ولاية الخرطوم',
+      locality: z.locality || 'محلية كرري',
+      neighborhood: z.neighborhood || z.zoneName || '',
+      zoneName: z.zoneName || '',
+      fee: typeof z.fee === 'number' ? z.fee : Number(z.fee) || 0,
+      details: z.details || '',
+      regionKey: z.regionKey || 'omdurman',
+      regionName: z.regionName || z.locality || 'منطقة التوصيل',
+      isActive: z.isActive !== false,
+    }));
+
+    await setDoc(docRef, {
+      zones: sanitized,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('a4_custom_delivery_zones', JSON.stringify(sanitized));
+        window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: sanitized } }));
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('a4_delivery_zones_channel');
+          bc.postMessage({ type: 'DELIVERY_ZONES_UPDATED', zones: sanitized });
+          bc.close();
+        }
+      } catch (e) {}
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Firestore save delivery zones error:', error);
+    return false;
+  }
+}
+
+export async function getDeliveryZonesFromCloud(): Promise<DeliveryZone[] | null> {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DELIVERY_ZONES_DOC_ID);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.zones)) {
+        return data.zones as DeliveryZone[];
+      }
+    }
+
+    // Fallback: collection scan
+    const docSnap = await getDocs(query(collection(db, UNIVERSITIES_COLLECTION)));
+    let foundZones: DeliveryZone[] | null = null;
+    docSnap.forEach((d) => {
+      if (d.id === DELIVERY_ZONES_DOC_ID) {
+        const data = d.data();
+        if (data && Array.isArray(data.zones)) {
+          foundZones = data.zones as DeliveryZone[];
+        }
+      }
+    });
+    return foundZones;
+  } catch (error) {
+    console.warn('Error fetching delivery zones from cloud:', error);
+    return null;
+  }
+}
+
+export function subscribeToCloudDeliveryZones(callback: (zones: DeliveryZone[]) => void): () => void {
+  try {
+    const docRef = doc(db, UNIVERSITIES_COLLECTION, DELIVERY_ZONES_DOC_ID);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.zones)) {
+            callback(data.zones as DeliveryZone[]);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore delivery zones listener warning:', error);
+      }
+    );
+  } catch (error) {
+    console.warn('Firestore delivery zones subscribe warning:', error);
     return () => {};
   }
 }

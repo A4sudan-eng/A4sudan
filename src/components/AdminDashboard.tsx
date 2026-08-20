@@ -64,6 +64,8 @@ interface AdminDashboardProps {
   rates: PricingRates;
   sheets: StudySheet[];
   coupons?: Coupon[];
+  deliveryZones?: DeliveryZone[];
+  onUpdateDeliveryZones?: (zones: DeliveryZone[]) => void;
   onUpdateOrderStatus: (orderId: string, status: OrderStatus, paymentStatus?: 'verified' | 'failed', estimatedCompletionTime?: string) => void;
   onDeleteOrder?: (orderId: string) => void;
   onUpdateRates: (newRates: PricingRates) => void;
@@ -82,6 +84,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   rates,
   sheets,
   coupons = [],
+  deliveryZones: propDeliveryZones,
+  onUpdateDeliveryZones: propOnUpdateDeliveryZones,
   onUpdateOrderStatus,
   onDeleteOrder,
   onUpdateRates,
@@ -183,7 +187,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [quickSearchTerm, setQuickSearchTerm] = useState('');
 
   // Delivery Zones state & realtime sync
-  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => propDeliveryZones || getStoredDeliveryZones());
+
+  useEffect(() => {
+    if (propDeliveryZones && Array.isArray(propDeliveryZones)) {
+      setDeliveryZones(propDeliveryZones);
+    }
+  }, [propDeliveryZones]);
 
   useEffect(() => {
     fetchServerDeliveryZones().then(zones => {
@@ -195,13 +205,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const handleDeliveryZonesUpdated = (e: any) => {
       if (e.detail && Array.isArray(e.detail.zones)) {
         setDeliveryZones(e.detail.zones);
+      } else if (e.detail && Array.isArray(e.detail)) {
+        setDeliveryZones(e.detail);
       } else {
         setDeliveryZones(getStoredDeliveryZones());
       }
     };
 
     window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
-    return () => window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+
+    let deliveryZonesBroadcastChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        deliveryZonesBroadcastChannel = new BroadcastChannel('a4_delivery_zones_channel');
+        deliveryZonesBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'DELIVERY_ZONES_UPDATED' && Array.isArray(event?.data?.zones)) {
+            setDeliveryZones(event.data.zones);
+          }
+        };
+      } catch (e) {}
+    }
+
+    return () => {
+      window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdated);
+      if (deliveryZonesBroadcastChannel) {
+        try { deliveryZonesBroadcastChannel.close(); } catch (e) {}
+      }
+    };
   }, []);
 
   // Trash PIN protection state (PIN: 1212)
@@ -6409,13 +6439,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           deliveryZones={deliveryZones}
           onUpdateZones={(newZones) => {
             setDeliveryZones(newZones);
-            saveStoredDeliveryZones(newZones);
+            if (propOnUpdateDeliveryZones) {
+              propOnUpdateDeliveryZones(newZones);
+            } else {
+              saveStoredDeliveryZones(newZones);
+            }
             triggerToast('تم تحديث وحفظ بيانات وأسعار مناطق التوصيل بنجاح 🚚');
           }}
           onResetZones={() => {
             const defaults = DEFAULT_ENRICHED_DELIVERY_ZONES;
             setDeliveryZones(defaults);
-            saveStoredDeliveryZones(defaults);
+            if (propOnUpdateDeliveryZones) {
+              propOnUpdateDeliveryZones(defaults);
+            } else {
+              saveStoredDeliveryZones(defaults);
+            }
             triggerToast('تمت استعادة القائمة الافتراضية الشاملة لمناطق التوصيل');
           }}
         />

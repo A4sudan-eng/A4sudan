@@ -491,7 +491,7 @@ ${filesList}
                     </div>
                     <div className="flex items-center gap-1.5 font-bold text-amber-900 mt-1.5 bg-amber-100/90 px-3 py-1 rounded-lg border border-amber-300 w-fit shadow-2xs">
                       <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                      <span>موعد التسليم المتوقع: <strong>{getEstimatedDeliveryText(order)}</strong></span>
+                      <span>موعد الاستلام المتوقع: <strong>{getEstimatedDeliveryText(order)}</strong></span>
                     </div>
                   </div>
                 </div>

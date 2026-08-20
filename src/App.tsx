@@ -8,7 +8,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { ApkDownloadModal } from './components/ApkDownloadModal';
 import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
-import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon } from './types';
+import { PrintOrder, PricingRates, PrintFileOptions, OrderStatus, StudySheet, Coupon, DeliveryZone } from './types';
 import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, INITIAL_COUPONS, getStoredDeletedIds, saveStoredDeletedId, getStoredDeletedSheetIds, saveStoredDeletedSheetId, removeStoredDeletedSheetId, getStoredSheets, getCanonicalSheetPrice } from './data/initialData';
 import { 
   saveOrderToCloud, 
@@ -39,9 +39,13 @@ import {
   subscribeToCloudPricingRates,
   saveCouponsToCloud,
   getCouponsFromCloud,
-  subscribeToCloudCoupons
+  subscribeToCloudCoupons,
+  saveDeliveryZonesToCloud,
+  getDeliveryZonesFromCloud,
+  subscribeToCloudDeliveryZones
 } from './lib/firebase';
 import { getStoredUniversities, saveStoredUniversities, getStoredAcademicLevels, saveStoredAcademicLevels } from './data/neelainData';
+import { getStoredDeliveryZones, saveStoredDeliveryZones, fetchServerDeliveryZones } from './utils/deliveryManager';
 import { recordVisit } from './utils/analyticsTracker';
 import { User } from 'firebase/auth';
 
@@ -50,6 +54,7 @@ export default function App() {
   const [rates, setRates] = useState<PricingRates>(DEFAULT_PRICING_RATES);
   const [orders, setOrders] = useState<PrintOrder[]>(INITIAL_ORDERS);
   const [sheets, setSheets] = useState<StudySheet[]>(() => getStoredSheets());
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => getStoredDeliveryZones());
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
     try {
       const raw = localStorage.getItem('a4_coupons');
@@ -570,6 +575,36 @@ export default function App() {
         })
       : null;
 
+    // Subscribe to real-time delivery zones updates from Firebase Firestore (Global Sync across all clients)
+    const unsubscribeCloudDeliveryZones = (typeof subscribeToCloudDeliveryZones === 'function')
+      ? subscribeToCloudDeliveryZones((cloudZones) => {
+          if (cloudZones && Array.isArray(cloudZones) && cloudZones.length > 0) {
+            setDeliveryZones(cloudZones);
+            try {
+              localStorage.setItem('a4_custom_delivery_zones', JSON.stringify(cloudZones));
+              window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: cloudZones } }));
+            } catch (e) {}
+          }
+        })
+      : null;
+
+    // Initial fetch of delivery zones from Cloud Firestore and server
+    getDeliveryZonesFromCloud().then(cloudZones => {
+      if (cloudZones && Array.isArray(cloudZones) && cloudZones.length > 0) {
+        setDeliveryZones(cloudZones);
+        try {
+          localStorage.setItem('a4_custom_delivery_zones', JSON.stringify(cloudZones));
+          window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: cloudZones } }));
+        } catch (e) {}
+      } else {
+        fetchServerDeliveryZones().then(serverZones => {
+          if (serverZones && Array.isArray(serverZones) && serverZones.length > 0) {
+            setDeliveryZones(serverZones);
+          }
+        });
+      }
+    }).catch(() => {});
+
     // Initial fetch of coupons from server
     fetch('/api/coupons')
       .then(res => res.ok ? res.json() : [])
@@ -588,6 +623,7 @@ export default function App() {
     let degreeTracksBroadcastChannel: BroadcastChannel | null = null;
     let ratesBroadcastChannel: BroadcastChannel | null = null;
     let couponsBroadcastChannel: BroadcastChannel | null = null;
+    let deliveryZonesBroadcastChannel: BroadcastChannel | null = null;
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         broadcastChannel = new BroadcastChannel('a4_orders_channel');
@@ -664,6 +700,7 @@ export default function App() {
           }
         };
       } catch (e) {}
+
       try {
         couponsBroadcastChannel = new BroadcastChannel('a4_coupons_channel');
         couponsBroadcastChannel.onmessage = (event) => {
@@ -671,6 +708,19 @@ export default function App() {
             setCoupons(event.data.coupons);
             try {
               localStorage.setItem('a4_coupons', JSON.stringify(event.data.coupons));
+            } catch (e) {}
+          }
+        };
+      } catch (e) {}
+
+      try {
+        deliveryZonesBroadcastChannel = new BroadcastChannel('a4_delivery_zones_channel');
+        deliveryZonesBroadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === 'DELIVERY_ZONES_UPDATED' && Array.isArray(event?.data?.zones)) {
+            setDeliveryZones(event.data.zones);
+            try {
+              localStorage.setItem('a4_custom_delivery_zones', JSON.stringify(event.data.zones));
+              window.dispatchEvent(new CustomEvent('a4_delivery_zones_updated', { detail: { zones: event.data.zones } }));
             } catch (e) {}
           }
         };
@@ -697,6 +747,15 @@ export default function App() {
     };
     window.addEventListener('a4_coupons_updated', handleCouponsUpdatedEvent);
 
+    const handleDeliveryZonesUpdatedEvent = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail.zones)) {
+        setDeliveryZones(e.detail.zones);
+      } else if (e?.detail && Array.isArray(e.detail)) {
+        setDeliveryZones(e.detail);
+      }
+    };
+    window.addEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdatedEvent);
+
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === 'a4_pricing_rates' && e.newValue) {
         try {
@@ -714,6 +773,13 @@ export default function App() {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed)) {
             setCoupons(parsed);
+          }
+        } catch (err) {}
+      } else if (e.key === 'a4_custom_delivery_zones' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setDeliveryZones(parsed);
           }
         } catch (err) {}
       }
@@ -737,8 +803,10 @@ export default function App() {
       if (unsubscribeCloudDegreeTracks) unsubscribeCloudDegreeTracks();
       if (unsubscribeCloudPricing) unsubscribeCloudPricing();
       if (unsubscribeCloudCoupons) unsubscribeCloudCoupons();
+      if (unsubscribeCloudDeliveryZones) unsubscribeCloudDeliveryZones();
       window.removeEventListener('a4_pricing_rates_updated', handleRatesUpdatedEvent);
       window.removeEventListener('a4_coupons_updated', handleCouponsUpdatedEvent);
+      window.removeEventListener('a4_delivery_zones_updated', handleDeliveryZonesUpdatedEvent);
       window.removeEventListener('storage', handleStorageEvent);
       if (broadcastChannel) {
         try { broadcastChannel.close(); } catch (e) {}
@@ -757,6 +825,9 @@ export default function App() {
       }
       if (couponsBroadcastChannel) {
         try { couponsBroadcastChannel.close(); } catch (e) {}
+      }
+      if (deliveryZonesBroadcastChannel) {
+        try { deliveryZonesBroadcastChannel.close(); } catch (e) {}
       }
     };
   }, []);
@@ -1147,6 +1218,11 @@ export default function App() {
     }
   };
 
+  const handleUpdateDeliveryZones = async (updatedZones: DeliveryZone[]) => {
+    setDeliveryZones(updatedZones);
+    await saveStoredDeliveryZones(updatedZones);
+  };
+
   const handleSelectSheetForPrint = (options: Partial<PrintFileOptions> | Partial<PrintFileOptions>[]) => {
     setPreloadedFiles(Array.isArray(options) ? options : [options]);
     setCurrentView('order');
@@ -1219,6 +1295,7 @@ export default function App() {
             <NewOrderForm
               rates={rates}
               coupons={coupons}
+              deliveryZones={deliveryZones}
               onOrderCreated={handleOrderCreated}
               preloadedFiles={preloadedFiles}
             />
@@ -1247,6 +1324,8 @@ export default function App() {
               rates={rates}
               sheets={sheets}
               coupons={coupons}
+              deliveryZones={deliveryZones}
+              onUpdateDeliveryZones={handleUpdateDeliveryZones}
               onUpdateOrderStatus={handleUpdateOrderStatus}
               onDeleteOrder={handleDeleteOrder}
               onUpdateRates={handleUpdateRates}

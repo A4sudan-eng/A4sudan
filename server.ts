@@ -6,7 +6,8 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { google } from 'googleapis';
 import { DEFAULT_PRICING_RATES, INITIAL_ORDERS, SAMPLE_STUDY_SHEETS, DELIVERY_ZONES, getCanonicalSheetPrice, INITIAL_COUPONS } from './src/data/initialData.js';
-import { SUDAN_UNIVERSITIES, UniversityInfo, ACADEMIC_LEVELS, AcademicLevel } from './src/data/neelainData.js';
+import { SUDAN_UNIVERSITIES, UniversityInfo, ACADEMIC_LEVELS, AcademicLevel, DEFAULT_DEGREE_TRACKS, DegreeTrackInfo } from './src/data/neelainData.js';
+import { DEFAULT_ENRICHED_DELIVERY_ZONES } from './src/utils/deliveryManager.js';
 import { PrintOrder, PricingRates, StudySheet, DeliveryZone, Coupon } from './src/types.js';
 
 async function startServer() {
@@ -36,6 +37,7 @@ async function startServer() {
   const VISITORS_FILE_PATH = path.join(process.cwd(), 'a4_visitors_store.json');
   const DELIVERY_ZONES_FILE_PATH = path.join(process.cwd(), 'a4_delivery_zones_store.json');
   const ACADEMIC_LEVELS_FILE_PATH = path.join(process.cwd(), 'a4_academic_levels_store.json');
+  const DEGREE_TRACKS_FILE_PATH = path.join(process.cwd(), 'a4_degree_tracks_store.json');
   const PRICING_RATES_FILE_PATH = path.join(process.cwd(), 'a4_pricing_rates_store.json');
   const COUPONS_FILE_PATH = path.join(process.cwd(), 'a4_coupons_store.json');
 
@@ -156,7 +158,7 @@ async function startServer() {
     } catch (err) {
       console.warn('Could not read persistent delivery zones file:', err);
     }
-    return [...DELIVERY_ZONES];
+    return [...DEFAULT_ENRICHED_DELIVERY_ZONES];
   }
 
   function saveDeliveryZonesToStore(list: DeliveryZone[]) {
@@ -190,6 +192,29 @@ async function startServer() {
     }
   }
 
+  function loadDegreeTracksFromStore(): DegreeTrackInfo[] {
+    try {
+      if (fs.existsSync(DEGREE_TRACKS_FILE_PATH)) {
+        const raw = fs.readFileSync(DEGREE_TRACKS_FILE_PATH, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) {
+          return list;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not read persistent degree tracks file:', err);
+    }
+    return [...DEFAULT_DEGREE_TRACKS];
+  }
+
+  function saveDegreeTracksToStore(list: DegreeTrackInfo[]) {
+    try {
+      fs.writeFileSync(DEGREE_TRACKS_FILE_PATH, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Could not write persistent degree tracks file:', err);
+    }
+  }
+
   function loadCouponsFromStore(): Coupon[] {
     try {
       if (fs.existsSync(COUPONS_FILE_PATH)) {
@@ -219,6 +244,7 @@ async function startServer() {
   let deletedOrderIds = new Set<string>(loadDeletedIdsFromStore().map(id => id.toLowerCase()));
   let universitiesList: UniversityInfo[] = loadUniversitiesFromStore();
   let academicLevelsList: AcademicLevel[] = loadAcademicLevelsFromStore();
+  let degreeTracksList: DegreeTrackInfo[] = loadDegreeTracksFromStore();
   let visitorsList: any[] = loadVisitorsFromStore();
   let deliveryZonesList: DeliveryZone[] = loadDeliveryZonesFromStore();
   let couponsList: Coupon[] = loadCouponsFromStore();
@@ -438,6 +464,41 @@ async function startServer() {
     res.status(400).json({ error: 'Invalid academic levels data' });
   });
 
+  // Degree Tracks API (Bachelor / Diploma / Post-grad controls)
+  app.get('/api/degree-tracks', (req, res) => {
+    res.json(degreeTracksList);
+  });
+
+  app.post('/api/degree-tracks', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      degreeTracksList = list;
+      saveDegreeTracksToStore(degreeTracksList);
+      return res.json({ success: true, degreeTracks: degreeTracksList });
+    }
+    if (req.body && Array.isArray(req.body.tracks)) {
+      degreeTracksList = req.body.tracks;
+      saveDegreeTracksToStore(degreeTracksList);
+      return res.json({ success: true, degreeTracks: degreeTracksList });
+    }
+    res.status(400).json({ error: 'Invalid degree tracks data' });
+  });
+
+  app.put('/api/degree-tracks', (req, res) => {
+    const list = req.body;
+    if (Array.isArray(list) && list.length > 0) {
+      degreeTracksList = list;
+      saveDegreeTracksToStore(degreeTracksList);
+      return res.json({ success: true, degreeTracks: degreeTracksList });
+    }
+    if (req.body && Array.isArray(req.body.tracks)) {
+      degreeTracksList = req.body.tracks;
+      saveDegreeTracksToStore(degreeTracksList);
+      return res.json({ success: true, degreeTracks: degreeTracksList });
+    }
+    res.status(400).json({ error: 'Invalid degree tracks data' });
+  });
+
   // Analytics & Visitor Tracking API
   app.post('/api/analytics/track', (req, res) => {
     try {
@@ -473,27 +534,34 @@ async function startServer() {
   });
 
   app.post('/api/delivery-zones', (req, res) => {
-    if (Array.isArray(req.body)) {
-      deliveryZonesList = req.body;
-      saveDeliveryZonesToStore(deliveryZonesList);
-      return res.json({ success: true, zones: deliveryZonesList });
-    }
-    if (req.body && req.body.zone) {
-      const newZone: DeliveryZone = req.body.zone;
-      const index = deliveryZonesList.findIndex(z => z.id === newZone.id);
+    const body = req.body;
+    let list: DeliveryZone[] | null = null;
+    if (Array.isArray(body)) {
+      list = body;
+    } else if (body && Array.isArray(body.zones)) {
+      list = body.zones;
+    } else if (body && (body.zone || body.id)) {
+      const zoneToSave: DeliveryZone = body.zone || body;
+      const index = deliveryZonesList.findIndex(z => z.id === zoneToSave.id);
       if (index >= 0) {
-        deliveryZonesList[index] = newZone;
+        deliveryZonesList[index] = zoneToSave;
       } else {
-        deliveryZonesList.unshift(newZone);
+        deliveryZonesList.unshift(zoneToSave);
       }
       saveDeliveryZonesToStore(deliveryZonesList);
-      return res.json({ success: true, zones: deliveryZonesList });
+      return res.json({ success: true, zones: deliveryZonesList, total: deliveryZonesList.length });
+    }
+
+    if (list !== null) {
+      deliveryZonesList = list;
+      saveDeliveryZonesToStore(deliveryZonesList);
+      return res.json({ success: true, zones: deliveryZonesList, total: deliveryZonesList.length });
     }
     res.status(400).json({ error: 'Invalid delivery zones data' });
   });
 
   app.post('/api/delivery-zones/reset', (req, res) => {
-    deliveryZonesList = [...DELIVERY_ZONES];
+    deliveryZonesList = [...DEFAULT_ENRICHED_DELIVERY_ZONES];
     saveDeliveryZonesToStore(deliveryZonesList);
     res.json({ success: true, zones: deliveryZonesList });
   });
@@ -1033,7 +1101,7 @@ async function startServer() {
 
       const aiInstance = aiClient || new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await aiInstance.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.7-flash',
         contents: promptText,
       });
 
@@ -1205,7 +1273,7 @@ async function startServer() {
           };
 
           const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.7-flash',
             contents: { parts: [imagePart, textPart] },
             config: {
               temperature: 0.1,
